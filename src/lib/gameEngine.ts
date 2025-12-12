@@ -299,7 +299,6 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
   }
 
   // Move invaders
-  const now = Date.now();
   if (now - newState.lastInvaderMove > newState.invaderSpeed) {
     const { invaders, direction, shouldMoveDown } = moveInvaders(
       newState.invaders,
@@ -345,7 +344,7 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
   // Check if all invaders are destroyed
   if (newState.invaders.every((inv) => !inv.isAlive)) {
     newState.level++;
-    newState.invaders = createInvaders();
+    newState.invaders = createInvaders(newState.level);
     newState.invaderSpeed = INITIAL_INVADER_SPEED * Math.pow(SPEED_INCREASE_FACTOR, newState.level - 1);
   }
 
@@ -424,6 +423,27 @@ function checkCollision(obj1: GameObject, obj2: GameObject): boolean {
     obj1.y < obj2.y + obj2.height &&
     obj1.y + obj1.height > obj2.y
   );
+}
+
+function damageShield(shield: Shield, bullet: Bullet): void {
+  // Calculate damage based on bullet impact
+  const damage = bullet.direction === 'down' ? 15 : 10;
+  shield.health -= damage;
+
+  // Mark damage on the shield's damage map at impact point
+  const relativeX = Math.floor((bullet.x - shield.x) / (shield.width / 20));
+  const relativeY = Math.floor((bullet.y - shield.y) / (shield.height / 10));
+
+  // Damage a small area around the impact point
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const mapX = Math.max(0, Math.min(19, relativeX + dx));
+      const mapY = Math.max(0, Math.min(9, relativeY + dy));
+      if (shield.damageMap[mapY]) {
+        shield.damageMap[mapY][mapX] = true;
+      }
+    }
+  }
 }
 
 export function getInvaderSprite(type: string, frame: number): string {
