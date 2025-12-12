@@ -17,7 +17,8 @@ import {
 import { audioEngine } from '@/lib/audioEngine';
 import { getInvoiceFromLightningAddress } from '@/lib/lightningInvoice';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useInvoiceStatus } from '@/hooks/useInvoiceStatus';
+import { usePaymentConfirmation } from '@/hooks/usePaymentConfirmation';
+import { generatePaymentId } from '@/lib/paymentVerification';
 import QRCode from 'qrcode';
 
 const GAME_COST_SATS = 21;
@@ -38,6 +39,7 @@ export function Game() {
   const [invoiceCopied, setInvoiceCopied] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(null);
   const gameLoopRef = useRef<number>();
   const previousScoreRef = useRef(0);
   const previousLevelRef = useRef(1);
@@ -49,19 +51,18 @@ export function Game() {
   const { toast } = useToast();
   const wallet = useWallet();
 
-  // Auto-detect invoice payment
-  const { isPaid: invoiceAutoPaid } = useInvoiceStatus({
-    invoice: lightningInvoice,
-    lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
-    amount: GAME_COST_SATS,
-    onPaid: () => {
+  // Listen for payment confirmation via Nostr webhook
+  const { isConfirmed: paymentConfirmed } = usePaymentConfirmation({
+    paymentId: currentPaymentId,
+    onConfirmed: () => {
       setHasPaid(true);
       setShowPayment(false);
       setLightningInvoice(null);
       setQrCodeDataUrl(null);
+      setCurrentPaymentId(null);
       toast({
-        title: 'Payment detected! 🎮',
-        description: 'Invoice paid! Starting Space Zapper...',
+        title: 'Payment confirmed! ⚡',
+        description: 'Starting Space Zapper...',
       });
     },
   });
@@ -229,10 +230,15 @@ export function Game() {
     setIsPaymentProcessing(true);
 
     try {
+      // Generate unique payment ID
+      const paymentId = generatePaymentId();
+      setCurrentPaymentId(paymentId);
+
+      // Include payment ID in comment for webhook tracking
       const invoice = await getInvoiceFromLightningAddress({
         lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
         amountSats: GAME_COST_SATS,
-        comment: 'Space Zapper game payment - 21 sats to play!',
+        comment: `Space Zapper game - ${paymentId}`,
       });
 
       setLightningInvoice(invoice);
@@ -292,6 +298,7 @@ export function Game() {
     setShowPayment(false);
     setLightningInvoice(null);
     setQrCodeDataUrl(null);
+    setCurrentPaymentId(null);
     toast({
       title: 'Payment confirmed! 🎮',
       description: 'Starting Space Zapper...',
@@ -709,10 +716,10 @@ export function Game() {
                     SCAN WITH YOUR LIGHTNING WALLET
                   </div>
 
-                  {invoiceAutoPaid ? (
+                  {paymentConfirmed ? (
                     <div className="bg-green-900/30 border border-green-500 p-4 rounded animate-pulse">
                       <div className="text-2xl text-green-400 font-bold">
-                        ✓ PAYMENT DETECTED!
+                        ✓ PAYMENT CONFIRMED!
                       </div>
                       <div className="text-sm text-green-300 mt-2">
                         Starting game...
@@ -725,7 +732,7 @@ export function Game() {
                           ⏳ WAITING FOR PAYMENT...
                         </div>
                         <div className="text-xs text-yellow-600 mt-1">
-                          Payment will be detected automatically
+                          Payment will be detected automatically via webhook
                         </div>
                       </div>
 

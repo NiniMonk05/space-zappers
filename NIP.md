@@ -1,12 +1,13 @@
-# NIP-XX: Space Zapper Game Scores
+# NIP-XX: Space Zapper Game Events
 
 ## Abstract
 
-This NIP defines a standard event kind for publishing game scores on Nostr, specifically for the Space Zapper (Space Invaders) game, but extensible to other arcade-style games.
+This NIP defines standard event kinds for Space Zapper (Space Invaders) game, including game scores and Lightning payment confirmations.
 
-## Event Kind
+## Event Kinds
 
 - `8549`: Game Score Event
+- `8550`: Payment Confirmation Event
 
 ## Event Format
 
@@ -109,8 +110,66 @@ Future improvements could include:
 - Tournament/challenge tags
 - Cross-game compatibility
 
+## Payment Confirmation Events (Kind 8550)
+
+Payment confirmation events are published by LNbits webhooks when a Lightning payment is received.
+
+### Content
+
+The `content` field contains a JSON object:
+
+```json
+{
+  "paymentId": <string>,
+  "invoice": <string>,
+  "status": "paid",
+  "amount": <number>,
+  "preimage": <string>,
+  "timestamp": <number>
+}
+```
+
+### Tags
+
+The following tags are REQUIRED:
+
+- `t` - Event tag: "space-zapper-payment"
+- `payment-id` - Unique payment identifier
+- `status` - Payment status: "paid"
+- `alt` - Human-readable description (NIP-31)
+
+### Example Event
+
+```json
+{
+  "kind": 8550,
+  "created_at": 1734033600,
+  "tags": [
+    ["t", "space-zapper-payment"],
+    ["payment-id", "szap_1734033600_abc123"],
+    ["status", "paid"],
+    ["alt", "Space Zapper payment confirmed: szap_1734033600_abc123"]
+  ],
+  "content": "{\"paymentId\":\"szap_1734033600_abc123\",\"invoice\":\"lnbc...\",\"status\":\"paid\",\"amount\":21000,\"preimage\":\"abc123...\",\"timestamp\":1734033600000}",
+  "pubkey": "...",
+  "id": "...",
+  "sig": "..."
+}
+```
+
+## Payment Flow
+
+1. User requests invoice with unique payment ID in comment
+2. User pays invoice
+3. LNbits calls webhook with payment details
+4. Webhook publishes kind 8550 event to Nostr
+5. Game client subscribes to payment-id tag
+6. Game automatically starts when payment confirmed
+
 ## Reference Implementation
 
 See the Space Zapper game implementation:
 - Score publishing: `src/pages/Game.tsx`
 - Score querying: `src/hooks/useGameScores.ts`
+- Payment confirmation: `src/hooks/usePaymentConfirmation.ts`
+- Webhook setup: `WEBHOOK.md`
