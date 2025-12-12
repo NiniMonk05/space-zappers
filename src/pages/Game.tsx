@@ -40,6 +40,7 @@ export function Game() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(null);
+  const [isFreePlay, setIsFreePlay] = useState(false);
   const gameLoopRef = useRef<number>();
   const previousScoreRef = useRef(0);
   const previousLevelRef = useRef(1);
@@ -305,10 +306,14 @@ export function Game() {
     });
   };
 
-  const startGame = () => {
-    if (!hasPaid) {
+  const startGame = (freeMode = false) => {
+    if (!hasPaid && !freeMode) {
       setShowPayment(true);
       return;
+    }
+
+    if (freeMode) {
+      setIsFreePlay(true);
     }
 
     setGameState(createInitialState());
@@ -443,6 +448,9 @@ export function Game() {
         <div className="flex items-center gap-4">
           <span className="text-green-400">SCORE</span>
           <span className="text-white font-bold">{gameState.score.toString().padStart(6, '0')}</span>
+          {isFreePlay && hasStarted && (
+            <span className="text-yellow-400 text-sm animate-pulse">FREE PLAY</span>
+          )}
         </div>
         <div className="flex items-center gap-4">
           <span className="text-green-400">LIVES</span>
@@ -470,14 +478,24 @@ export function Game() {
                 <div className="text-6xl text-green-400 animate-pulse font-bold">
                   INSERT COIN
                 </div>
-                <Button
-                  onClick={startGame}
-                  size="lg"
-                  className="bg-green-500 text-black hover:bg-green-400 font-bold text-2xl px-12 py-8"
-                >
-                  <Zap className="mr-3 h-8 w-8" />
-                  PAY 21 SATS TO PLAY
-                </Button>
+                <div className="space-y-3">
+                  <Button
+                    onClick={() => startGame(false)}
+                    size="lg"
+                    className="bg-green-500 text-black hover:bg-green-400 font-bold text-2xl px-12 py-8 w-full"
+                  >
+                    <Zap className="mr-3 h-8 w-8" />
+                    PAY 21 SATS TO PLAY
+                  </Button>
+                  <Button
+                    onClick={() => startGame(true)}
+                    variant="outline"
+                    size="sm"
+                    className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-sm px-6 py-3 w-full"
+                  >
+                    TRY FOR FREE
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -492,15 +510,25 @@ export function Game() {
                   FINAL SCORE: {gameState.score}
                 </div>
                 <div className="flex flex-col gap-4">
-                  <Button
-                    onClick={startGame}
-                    size="lg"
-                    className="bg-green-500 text-black hover:bg-green-400 font-bold text-xl px-8 py-6"
-                  >
-                    <Zap className="mr-2 h-6 w-6" />
-                    PLAY AGAIN (21 SATS)
-                  </Button>
-                  {user && (
+                  <div className="flex gap-4">
+                    <Button
+                      onClick={() => startGame(false)}
+                      size="lg"
+                      className="bg-green-500 text-black hover:bg-green-400 font-bold text-xl px-8 py-6"
+                    >
+                      <Zap className="mr-2 h-6 w-6" />
+                      PLAY AGAIN (21 SATS)
+                    </Button>
+                    <Button
+                      onClick={() => startGame(true)}
+                      variant="outline"
+                      size="lg"
+                      className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg px-8 py-6"
+                    >
+                      TRY FREE AGAIN
+                    </Button>
+                  </div>
+                  {user && !isFreePlay && (
                     <div className="flex gap-4">
                       <Button
                         onClick={publishScore}
