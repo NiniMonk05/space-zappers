@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause } from 'lucide-react';
+import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { GameCanvas } from '@/components/GameCanvas';
@@ -16,11 +16,14 @@ import {
   type GameState,
 } from '@/lib/gameEngine';
 import { audioEngine } from '@/lib/audioEngine';
+import { getInvoiceFromLightningAddress } from '@/lib/lightningInvoice';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import QRCode from 'qrcode';
 
 const GAME_COST_SATS = 21;
 const RECIPIENT_NPUB = 'npub1sfpeyr9k5jms37q4900mw9q4vze4xwhdxd4avdxjml8rqgjkre8s4lcq9l';
 const RECIPIENT_PUBKEY = '8243920cb6a4b708f8152bdfb7141560b3533aed336bd634d2dfce3022561e4f';
+const RECIPIENT_LIGHTNING_ADDRESS = 'greyparrot7@primal.net';
 
 export function Game() {
   const [gameState, setGameState] = useState<GameState>(createInitialState());
@@ -30,6 +33,9 @@ export function Game() {
   const [hasPaid, setHasPaid] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [isPaymentProcessing, setIsPaymentProcessing] = useState(false);
+  const [lightningInvoice, setLightningInvoice] = useState<string | null>(null);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+  const [invoiceCopied, setInvoiceCopied] = useState(false);
   const gameLoopRef = useRef<number>();
   const previousScoreRef = useRef(0);
   const previousLevelRef = useRef(1);
@@ -141,11 +147,11 @@ export function Game() {
     };
   }, [hasStarted, gameState.gameOver, gameState.isPaused]);
 
-  const handlePayment = async () => {
+  const handleWalletPayment = async () => {
     if (!wallet) {
       toast({
         title: 'No wallet connected',
-        description: 'Please connect a Lightning wallet to play',
+        description: 'Please connect a Lightning wallet or use invoice payment',
         variant: 'destructive',
       });
       return;
@@ -154,18 +160,32 @@ export function Game() {
     setIsPaymentProcessing(true);
 
     try {
-      await wallet.sendPayment({
-        destination: RECIPIENT_PUBKEY,
-        amount: GAME_COST_SATS,
-        comment: 'Space Zapper game payment - 21 sats to play!',
-      });
+      // Try to use WebLN if available
+      if (typeof window.webln !== 'undefined') {
+        await window.webln.enable();
 
-      setHasPaid(true);
-      setShowPayment(false);
-      toast({
-        title: 'Payment successful! ⚡',
-        description: `Zapped ${GAME_COST_SATS} sats to play Space Zapper`,
-      });
+        // Generate invoice for WebLN payment
+        const invoice = await getInvoiceFromLightningAddress({
+          lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
+          amountSats: GAME_COST_SATS,
+          comment: 'Space Zapper game payment - 21 sats to play!',
+        });
+
+        await window.webln.sendPayment(invoice);
+
+        setHasPaid(true);
+        setShowPayment(false);
+        toast({
+          title: 'Payment successful! ⚡',
+          description: `Zapped ${GAME_COST_SATS} sats to play Space Zapper`,
+        });
+      } else {
+        toast({
+          title: 'WebLN not available',
+          description: 'Please use the invoice payment option',
+          variant: 'destructive',
+        });
+      }
     } catch (error) {
       toast({
         title: 'Payment failed',
@@ -175,6 +195,79 @@ export function Game() {
     } finally {
       setIsPaymentProcessing(false);
     }
+  };
+
+  const handleGenerateInvoice = async () => {
+    setIsPaymentProcessing(true);
+
+    try {
+      const invoice = await getInvoiceFromLightningAddress({
+        lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
+        amountSats: GAME_COST_SATS,
+        comment: 'Space Zapper game payment - 21 sats to play!',
+      });
+
+      setLightningInvoice(invoice);
+
+      // Generate QR code
+      const qrDataUrl = await QRCode.toDataURL(invoice.toUpperCase(), {
+        errorCorrectionLevel: 'L',
+        margin: 2,
+        width: 300,
+        color: {
+          dark: '#00ff00',
+          light: '#000000',
+        },
+      });
+      setQrCodeDataUrl(qrDataUrl);
+
+      toast({
+        title: 'Invoice generated! ⚡',
+        description: 'Scan the QR code or copy the invoice to pay',
+      });
+    } catch (error) {
+      toast({
+        title: 'Failed to generate invoice',
+        description: error instanceof Error ? error.message : 'Please try again',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsPaymentProcessing(false);
+    }
+  };
+
+  const copyInvoice = async () => {
+    if (!lightningInvoice) return;
+
+    try {
+      await navigator.clipboard.writeText(lightningInvoice);
+      setInvoiceCopied(true);
+      toast({
+        title: 'Invoice copied!',
+        description: 'Paste it in your Lightning wallet to pay',
+      });
+
+      setTimeout(() => {
+        setInvoiceCopied(false);
+      }, 2000);
+    } catch (error) {
+      toast({
+        title: 'Failed to copy',
+        description: 'Please try again',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const confirmPayment = () => {
+    setHasPaid(true);
+    setShowPayment(false);
+    setLightningInvoice(null);
+    setQrCodeDataUrl(null);
+    toast({
+      title: 'Payment confirmed! 🎮',
+      description: 'Starting Space Zapper...',
+    });
   };
 
   const startGame = () => {
@@ -463,8 +556,15 @@ export function Game() {
       </div>
 
       {/* Payment Dialog */}
-      <Dialog open={showPayment} onOpenChange={setShowPayment}>
-        <DialogContent className="bg-gray-900 border-green-500 text-green-500">
+      <Dialog open={showPayment} onOpenChange={(open) => {
+        setShowPayment(open);
+        if (!open) {
+          setLightningInvoice(null);
+          setQrCodeDataUrl(null);
+          setInvoiceCopied(false);
+        }
+      }}>
+        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md">
           <DialogHeader>
             <DialogTitle className="text-2xl text-green-400">Pay to Play</DialogTitle>
             <DialogDescription className="text-green-300">
@@ -472,32 +572,124 @@ export function Game() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="text-center py-6">
-              <div className="text-6xl mb-4">⚡</div>
-              <div className="text-3xl font-bold text-yellow-400">21 SATS</div>
-              <div className="text-sm text-green-600 mt-2">
-                to {RECIPIENT_NPUB.slice(0, 16)}...
-              </div>
-            </div>
-            {!wallet ? (
-              <div className="text-center text-yellow-500">
-                Please connect a Lightning wallet first
-              </div>
+            {!lightningInvoice ? (
+              <>
+                <div className="text-center py-6">
+                  <div className="text-6xl mb-4">⚡</div>
+                  <div className="text-3xl font-bold text-yellow-400">21 SATS</div>
+                  <div className="text-sm text-green-600 mt-2">
+                    to {RECIPIENT_LIGHTNING_ADDRESS}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {wallet && (
+                    <Button
+                      onClick={handleWalletPayment}
+                      disabled={isPaymentProcessing}
+                      className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-lg py-6"
+                    >
+                      {isPaymentProcessing ? (
+                        <>Processing...</>
+                      ) : (
+                        <>
+                          <Zap className="mr-2 h-5 w-5" />
+                          PAY WITH WALLET
+                        </>
+                      )}
+                    </Button>
+                  )}
+
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t border-green-700" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-gray-900 px-2 text-green-600">Or</span>
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={handleGenerateInvoice}
+                    disabled={isPaymentProcessing}
+                    variant="outline"
+                    className="w-full border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-bold text-lg py-6"
+                  >
+                    {isPaymentProcessing ? (
+                      <>Generating...</>
+                    ) : (
+                      <>GET LIGHTNING INVOICE</>
+                    )}
+                  </Button>
+                </div>
+              </>
             ) : (
-              <Button
-                onClick={handlePayment}
-                disabled={isPaymentProcessing}
-                className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-lg py-6"
-              >
-                {isPaymentProcessing ? (
-                  <>Processing...</>
-                ) : (
-                  <>
-                    <Zap className="mr-2 h-5 w-5" />
-                    ZAP 21 SATS
-                  </>
-                )}
-              </Button>
+              <>
+                <div className="text-center space-y-4">
+                  {qrCodeDataUrl && (
+                    <div className="flex justify-center">
+                      <img
+                        src={qrCodeDataUrl}
+                        alt="Lightning Invoice QR Code"
+                        className="rounded-lg border-4 border-green-500"
+                      />
+                    </div>
+                  )}
+
+                  <div className="text-sm text-green-400">
+                    Scan with your Lightning wallet
+                  </div>
+
+                  <div className="bg-black p-3 rounded border border-green-700">
+                    <div className="text-xs text-green-500 break-all font-mono">
+                      {lightningInvoice.slice(0, 60)}...
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={copyInvoice}
+                      variant="outline"
+                      className="flex-1 border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
+                    >
+                      {invoiceCopied ? (
+                        <>
+                          <Check className="mr-2 h-4 w-4" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="mr-2 h-4 w-4" />
+                          Copy Invoice
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="pt-4 border-t border-green-700">
+                    <div className="text-xs text-green-600 mb-3">
+                      After paying the invoice, click below to start playing
+                    </div>
+                    <Button
+                      onClick={confirmPayment}
+                      className="w-full bg-green-500 text-black hover:bg-green-400 font-bold"
+                    >
+                      I PAID - START GAME
+                    </Button>
+                  </div>
+
+                  <Button
+                    onClick={() => {
+                      setLightningInvoice(null);
+                      setQrCodeDataUrl(null);
+                    }}
+                    variant="ghost"
+                    className="w-full text-green-600 hover:text-green-400"
+                  >
+                    ← Back
+                  </Button>
+                </div>
+              </>
             )}
           </div>
         </DialogContent>
