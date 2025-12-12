@@ -17,6 +17,7 @@ import {
 import { audioEngine } from '@/lib/audioEngine';
 import { getInvoiceFromLightningAddress } from '@/lib/lightningInvoice';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useInvoiceStatus } from '@/hooks/useInvoiceStatus';
 import QRCode from 'qrcode';
 
 const GAME_COST_SATS = 21;
@@ -48,13 +49,30 @@ export function Game() {
   const { toast } = useToast();
   const wallet = useWallet();
 
+  // Auto-detect invoice payment
+  const { isPaid: invoiceAutoPaid } = useInvoiceStatus({
+    invoice: lightningInvoice,
+    lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
+    amount: GAME_COST_SATS,
+    onPaid: () => {
+      setHasPaid(true);
+      setShowPayment(false);
+      setLightningInvoice(null);
+      setQrCodeDataUrl(null);
+      toast({
+        title: 'Payment detected! 🎮',
+        description: 'Invoice paid! Starting Space Zapper...',
+      });
+    },
+  });
+
   // Handle keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['ArrowLeft', 'ArrowRight', 'a', 'd', ' '].includes(e.key)) {
         e.preventDefault();
         setKeys((prev) => new Set(prev).add(e.key));
-        
+
         if (e.key === ' ' && hasStarted && !gameState.gameOver) {
           setGameState((state) => {
             const newState = shootBullet(state);
@@ -96,18 +114,18 @@ export function Game() {
     const loop = () => {
       setGameState((state) => {
         const newState = updateGame(state, keys);
-        
+
         // Play sound effects
         if (newState.score > previousScoreRef.current) {
           audioEngine.playExplosion();
           previousScoreRef.current = newState.score;
         }
-        
+
         if (newState.level > previousLevelRef.current) {
           audioEngine.playLevelUp();
           previousLevelRef.current = newState.level;
         }
-        
+
         // Update music tempo based on invader count
         const aliveInvaders = newState.invaders.filter((inv) => inv.isAlive).length;
         if (aliveInvaders !== previousInvaderCountRef.current) {
@@ -115,15 +133,15 @@ export function Game() {
           audioEngine.updateTempo(speedRatio);
           previousInvaderCountRef.current = aliveInvaders;
         }
-        
+
         if (newState.gameOver && !state.gameOver) {
           audioEngine.playGameOver();
           audioEngine.stopMusic();
         }
-        
+
         return newState;
       });
-      
+
       gameLoopRef.current = requestAnimationFrame(loop);
     };
 
@@ -173,7 +191,7 @@ export function Game() {
       // Try to use WebLN if available
       if (typeof window.webln !== 'undefined') {
         await window.webln.enable();
-        
+
         // Generate invoice for WebLN payment
         const invoice = await getInvoiceFromLightningAddress({
           lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
@@ -182,7 +200,7 @@ export function Game() {
         });
 
         await window.webln.sendPayment(invoice);
-        
+
         setHasPaid(true);
         setShowPayment(false);
         toast({
@@ -300,7 +318,7 @@ export function Game() {
   const toggleMute = () => {
     const muted = audioEngine.toggleMute();
     setIsMuted(muted);
-    
+
     if (muted) {
       audioEngine.stopMusic();
     } else {
@@ -340,7 +358,7 @@ export function Game() {
 
   const shareScore = useCallback(() => {
     const text = `I just scored ${gameState.score} points on level ${gameState.level} in Space Zapper! ⚡🎮\n\nPlay at: ${window.location.origin}`;
-    
+
     if (navigator.share) {
       navigator.share({ text });
     } else {
@@ -356,7 +374,7 @@ export function Game() {
     <div className="fixed inset-0 bg-black text-green-500 overflow-hidden flex flex-col">
       {/* CRT Effect Overlay */}
       <div className="fixed inset-0 pointer-events-none bg-[linear-gradient(transparent_50%,rgba(0,255,0,0.03)_50%)] bg-[length:100%_4px] z-50" />
-      
+
       {/* Header Bar */}
       <div className="relative z-10 bg-black border-b-2 border-green-500 px-6 py-3 flex justify-between items-center">
         <div className="flex items-center gap-6">
@@ -367,10 +385,10 @@ export function Game() {
             ⚡ 21 SATS
           </div>
         </div>
-        
+
         <div className="flex items-center gap-4">
           {!user && <LoginArea className="max-w-48" />}
-          
+
           <Button
             variant="outline"
             size="sm"
@@ -380,7 +398,7 @@ export function Game() {
             <Trophy className="mr-2 h-4 w-4" />
             LEADERBOARD
           </Button>
-          
+
           <Button
             variant="outline"
             size="sm"
@@ -390,7 +408,7 @@ export function Game() {
             <HelpCircle className="mr-2 h-4 w-4" />
             HOW TO PLAY
           </Button>
-          
+
           <Button
             variant="outline"
             size="icon"
@@ -399,7 +417,7 @@ export function Game() {
           >
             {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
           </Button>
-          
+
           {hasStarted && !gameState.gameOver && (
             <Button
               variant="outline"
@@ -437,7 +455,7 @@ export function Game() {
       <div className="relative z-10 flex-1 flex items-center justify-center bg-black p-8">
         <div className="relative">
           <GameCanvas gameState={gameState} />
-          
+
           {/* Overlays */}
           {!hasStarted && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80">
@@ -679,8 +697,8 @@ export function Game() {
                 <div className="text-center space-y-4">
                   {qrCodeDataUrl && (
                     <div className="flex justify-center">
-                      <img 
-                        src={qrCodeDataUrl} 
+                      <img
+                        src={qrCodeDataUrl}
                         alt="Lightning Invoice QR Code"
                         className="rounded-lg border-4 border-green-500"
                       />
@@ -691,11 +709,33 @@ export function Game() {
                     SCAN WITH YOUR LIGHTNING WALLET
                   </div>
 
-                  <div className="bg-black p-3 rounded border border-green-700">
-                    <div className="text-xs text-green-500 break-all">
-                      {lightningInvoice.slice(0, 60)}...
+                  {invoiceAutoPaid ? (
+                    <div className="bg-green-900/30 border border-green-500 p-4 rounded animate-pulse">
+                      <div className="text-2xl text-green-400 font-bold">
+                        ✓ PAYMENT DETECTED!
+                      </div>
+                      <div className="text-sm text-green-300 mt-2">
+                        Starting game...
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="bg-yellow-900/20 border border-yellow-600 p-3 rounded">
+                        <div className="text-sm text-yellow-400 animate-pulse">
+                          ⏳ WAITING FOR PAYMENT...
+                        </div>
+                        <div className="text-xs text-yellow-600 mt-1">
+                          Payment will be detected automatically
+                        </div>
+                      </div>
+
+                      <div className="bg-black p-3 rounded border border-green-700">
+                        <div className="text-xs text-green-500 break-all">
+                          {lightningInvoice.slice(0, 60)}...
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   <div className="flex gap-2">
                     <Button
