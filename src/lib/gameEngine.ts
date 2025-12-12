@@ -27,6 +27,12 @@ export interface Bullet extends GameObject {
 
 export interface Shield extends GameObject {
   health: number;
+  damageMap: boolean[][]; // Track which pixels are damaged
+}
+
+export interface BonusUFO extends GameObject {
+  points: number;
+  speed: number;
 }
 
 export interface GameState {
@@ -34,6 +40,7 @@ export interface GameState {
   invaders: Invader[];
   bullets: Bullet[];
   shields: Shield[];
+  bonusUFO: BonusUFO | null;
   score: number;
   level: number;
   gameOver: boolean;
@@ -42,6 +49,7 @@ export interface GameState {
   invaderSpeed: number;
   lastInvaderMove: number;
   animationFrame: number;
+  nextUFOSpawn: number;
 }
 
 // Game constants
@@ -60,6 +68,10 @@ export const BULLET_SPEED = 7;
 export const INITIAL_INVADER_SPEED = 1000; // milliseconds between moves
 export const MIN_INVADER_SPEED = 200;
 export const SPEED_INCREASE_FACTOR = 0.95;
+export const UFO_SPAWN_INTERVAL = 20000; // 20 seconds
+export const UFO_SPEED = 2;
+export const UFO_WIDTH = 48;
+export const UFO_HEIGHT = 24;
 
 // Invader formation
 const INVADERS_PER_ROW = 11;
@@ -79,9 +91,10 @@ export function createInitialState(): GameState {
       isAlive: true,
       lives: 3,
     },
-    invaders: createInvaders(),
+    invaders: createInvaders(1),
     bullets: [],
     shields: createShields(),
+    bonusUFO: null,
     score: 0,
     level: 1,
     gameOver: false,
@@ -90,11 +103,15 @@ export function createInitialState(): GameState {
     invaderSpeed: INITIAL_INVADER_SPEED,
     lastInvaderMove: Date.now(),
     animationFrame: 0,
+    nextUFOSpawn: Date.now() + UFO_SPAWN_INTERVAL,
   };
 }
 
-function createInvaders(): Invader[] {
+function createInvaders(level: number): Invader[] {
   const invaders: Invader[] = [];
+
+  // Invaders get closer each level
+  const levelOffset = Math.min((level - 1) * 10, 50);
 
   for (let row = 0; row < INVADER_ROWS; row++) {
     let type: 'squid' | 'crab' | 'octopus';
@@ -114,7 +131,7 @@ function createInvaders(): Invader[] {
     for (let col = 0; col < INVADERS_PER_ROW; col++) {
       invaders.push({
         x: INVADER_START_X + col * INVADER_SPACING_X,
-        y: INVADER_START_Y + row * INVADER_SPACING_Y,
+        y: INVADER_START_Y + row * INVADER_SPACING_Y + levelOffset,
         width: INVADER_WIDTH,
         height: INVADER_HEIGHT,
         type,
@@ -133,6 +150,15 @@ function createShields(): Shield[] {
   const shieldCount = 4;
   const spacing = GAME_WIDTH / (shieldCount + 1);
 
+  // Create classic shield shape damage map (20x10 pixels)
+  const createDamageMap = (): boolean[][] => {
+    const map: boolean[][] = [];
+    for (let i = 0; i < 10; i++) {
+      map.push(new Array(20).fill(false));
+    }
+    return map;
+  };
+
   for (let i = 0; i < shieldCount; i++) {
     shields.push({
       x: spacing * (i + 1) - SHIELD_WIDTH / 2,
@@ -140,7 +166,8 @@ function createShields(): Shield[] {
       width: SHIELD_WIDTH,
       height: SHIELD_HEIGHT,
       isAlive: true,
-      health: 10,
+      health: 100, // Total health based on pixels
+      damageMap: createDamageMap(),
     });
   }
 
@@ -153,6 +180,8 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
   }
 
   const newState = { ...state };
+  let playerHit = false;
+  let ufoHit = false;
 
   // Update player position
   if (keys.has('ArrowLeft') || keys.has('a')) {
@@ -176,6 +205,49 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
     }))
     .filter((bullet) => bullet.y > 0 && bullet.y < GAME_HEIGHT);
 
+  // Spawn bonus UFO
+  const now = Date.now();
+  if (!newState.bonusUFO && now >= newState.nextUFOSpawn && Math.random() < 0.5) {
+    const direction = Math.random() < 0.5 ? 1 : -1;
+    newState.bonusUFO = {
+      x: direction > 0 ? -UFO_WIDTH : GAME_WIDTH,
+      y: 40,
+      width: UFO_WIDTH,
+      height: UFO_HEIGHT,
+      isAlive: true,
+      points: [50, 100, 150, 300][Math.floor(Math.random() * 4)],
+      speed: UFO_SPEED * direction,
+    };
+  }
+
+  // Update UFO
+  if (newState.bonusUFO) {
+    newState.bonusUFO = {
+      ...newState.bonusUFO,
+      x: newState.bonusUFO.x + newState.bonusUFO.speed,
+    };
+
+    // Remove UFO if off screen
+    if (newState.bonusUFO.x < -UFO_WIDTH || newState.bonusUFO.x > GAME_WIDTH) {
+      newState.bonusUFO = null;
+      newState.nextUFOSpawn = now + UFO_SPAWN_INTERVAL;
+    }
+  }
+
+  // Check bullet collisions with UFO
+  newState.bullets = newState.bullets.filter((bullet) => {
+    if (bullet.direction === 'down' || !newState.bonusUFO) return true;
+
+    if (checkCollision(bullet, newState.bonusUFO)) {
+      newState.score += newState.bonusUFO.points;
+      newState.bonusUFO = null;
+      newState.nextUFOSpawn = now + UFO_SPAWN_INTERVAL;
+      ufoHit = true;
+      return false;
+    }
+    return true;
+  });
+
   // Check bullet collisions with invaders
   newState.bullets = newState.bullets.filter((bullet) => {
     if (bullet.direction === 'down') return true;
@@ -193,14 +265,17 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
     return true;
   });
 
-  // Check bullet collisions with shields
+  // Check bullet collisions with shields (both player and enemy bullets damage shields!)
   newState.bullets = newState.bullets.filter((bullet) => {
     for (let i = 0; i < newState.shields.length; i++) {
       const shield = newState.shields[i];
       if (!shield.isAlive) continue;
 
       if (checkCollision(bullet, shield)) {
-        newState.shields[i] = { ...shield, health: shield.health - 1 };
+        // Damage the shield at bullet impact point
+        damageShield(newState.shields[i], bullet);
+
+        // Check if shield should be destroyed
         if (newState.shields[i].health <= 0) {
           newState.shields[i].isAlive = false;
         }
