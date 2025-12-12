@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check } from 'lucide-react';
+import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { GameCanvas } from '@/components/GameCanvas';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -36,6 +35,8 @@ export function Game() {
   const [lightningInvoice, setLightningInvoice] = useState<string | null>(null);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [invoiceCopied, setInvoiceCopied] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
   const gameLoopRef = useRef<number>();
   const previousScoreRef = useRef(0);
   const previousLevelRef = useRef(1);
@@ -53,7 +54,7 @@ export function Game() {
       if (['ArrowLeft', 'ArrowRight', 'a', 'd', ' '].includes(e.key)) {
         e.preventDefault();
         setKeys((prev) => new Set(prev).add(e.key));
-
+        
         if (e.key === ' ' && hasStarted && !gameState.gameOver) {
           setGameState((state) => {
             const newState = shootBullet(state);
@@ -95,18 +96,18 @@ export function Game() {
     const loop = () => {
       setGameState((state) => {
         const newState = updateGame(state, keys);
-
+        
         // Play sound effects
         if (newState.score > previousScoreRef.current) {
           audioEngine.playExplosion();
           previousScoreRef.current = newState.score;
         }
-
+        
         if (newState.level > previousLevelRef.current) {
           audioEngine.playLevelUp();
           previousLevelRef.current = newState.level;
         }
-
+        
         // Update music tempo based on invader count
         const aliveInvaders = newState.invaders.filter((inv) => inv.isAlive).length;
         if (aliveInvaders !== previousInvaderCountRef.current) {
@@ -114,15 +115,15 @@ export function Game() {
           audioEngine.updateTempo(speedRatio);
           previousInvaderCountRef.current = aliveInvaders;
         }
-
+        
         if (newState.gameOver && !state.gameOver) {
           audioEngine.playGameOver();
           audioEngine.stopMusic();
         }
-
+        
         return newState;
       });
-
+      
       gameLoopRef.current = requestAnimationFrame(loop);
     };
 
@@ -135,17 +136,26 @@ export function Game() {
     };
   }, [hasStarted, gameState.gameOver, gameState.isPaused, keys]);
 
-  // Start music when game starts
+  // Start music when page loads
   useEffect(() => {
-    if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
-      audioEngine.initialize();
-      audioEngine.startMusic();
-    }
+    audioEngine.initialize();
+    audioEngine.startMusic();
 
     return () => {
       audioEngine.stopMusic();
     };
-  }, [hasStarted, gameState.gameOver, gameState.isPaused]);
+  }, []);
+
+  // Control music during gameplay
+  useEffect(() => {
+    if (gameState.gameOver) {
+      audioEngine.stopMusic();
+    } else if (!gameState.isPaused && !isMuted) {
+      if (!audioEngine['isMusicPlaying']) {
+        audioEngine.startMusic();
+      }
+    }
+  }, [gameState.gameOver, gameState.isPaused, isMuted]);
 
   const handleWalletPayment = async () => {
     if (!wallet) {
@@ -163,7 +173,7 @@ export function Game() {
       // Try to use WebLN if available
       if (typeof window.webln !== 'undefined') {
         await window.webln.enable();
-
+        
         // Generate invoice for WebLN payment
         const invoice = await getInvoiceFromLightningAddress({
           lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
@@ -172,7 +182,7 @@ export function Game() {
         });
 
         await window.webln.sendPayment(invoice);
-
+        
         setHasPaid(true);
         setShowPayment(false);
         toast({
@@ -290,6 +300,12 @@ export function Game() {
   const toggleMute = () => {
     const muted = audioEngine.toggleMute();
     setIsMuted(muted);
+    
+    if (muted) {
+      audioEngine.stopMusic();
+    } else {
+      audioEngine.startMusic();
+    }
   };
 
   const publishScore = useCallback(() => {
@@ -324,7 +340,7 @@ export function Game() {
 
   const shareScore = useCallback(() => {
     const text = `I just scored ${gameState.score} points on level ${gameState.level} in Space Zapper! ⚡🎮\n\nPlay at: ${window.location.origin}`;
-
+    
     if (navigator.share) {
       navigator.share({ text });
     } else {
@@ -337,223 +353,258 @@ export function Game() {
   }, [gameState.score, gameState.level, toast]);
 
   return (
-    <div className="min-h-screen bg-black text-green-500 font-mono">
+    <div className="fixed inset-0 bg-black text-green-500 overflow-hidden flex flex-col">
       {/* CRT Effect Overlay */}
       <div className="fixed inset-0 pointer-events-none bg-[linear-gradient(transparent_50%,rgba(0,255,0,0.03)_50%)] bg-[length:100%_4px] z-50" />
-
-      <div className="container mx-auto px-4 py-8 relative z-10">
-        {/* Header */}
-        <div className="text-center mb-8 space-y-4">
-          <div className="relative inline-block">
-            <h1 className="text-6xl md:text-8xl font-bold tracking-wider text-green-400 animate-pulse drop-shadow-[0_0_20px_rgba(0,255,0,0.8)]">
-              SPACE ZAPPER
-            </h1>
-            <div className="absolute -top-2 -right-2 bg-yellow-400 text-black text-xs px-2 py-1 rounded font-bold animate-bounce">
-              ⚡ 21 SATS
-            </div>
+      
+      {/* Header Bar */}
+      <div className="relative z-10 bg-black border-b-2 border-green-500 px-6 py-3 flex justify-between items-center">
+        <div className="flex items-center gap-6">
+          <h1 className="text-4xl font-bold tracking-wider text-green-400 drop-shadow-[0_0_10px_rgba(0,255,0,0.8)]">
+            SPACE ZAPPER
+          </h1>
+          <div className="bg-yellow-400 text-black text-sm px-3 py-1 rounded font-bold">
+            ⚡ 21 SATS
           </div>
-          <p className="text-xl text-green-300">
-            Classic arcade action on the Lightning Network
-          </p>
-
-          {!user && (
-            <div className="flex justify-center">
-              <LoginArea className="max-w-60" />
-            </div>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          {!user && <LoginArea className="max-w-48" />}
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowLeaderboard(true)}
+            className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg"
+          >
+            <Trophy className="mr-2 h-4 w-4" />
+            LEADERBOARD
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowHowToPlay(true)}
+            className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg"
+          >
+            <HelpCircle className="mr-2 h-4 w-4" />
+            HOW TO PLAY
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleMute}
+            className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
+          >
+            {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+          </Button>
+          
+          {hasStarted && !gameState.gameOver && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={togglePause}
+              className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
+            >
+              {gameState.isPaused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />}
+            </Button>
           )}
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Game Area */}
-          <div className="lg:col-span-2 space-y-4">
-            <Card className="bg-gray-900 border-green-500 border-2 shadow-[0_0_20px_rgba(0,255,0,0.3)]">
-              <CardContent className="p-6">
-                {/* Game Stats */}
-                <div className="flex justify-between items-center mb-4 text-2xl">
-                  <div className="flex items-center gap-4">
-                    <span className="text-green-400">SCORE</span>
-                    <span className="text-white font-bold">{gameState.score.toString().padStart(6, '0')}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-green-400">LIVES</span>
-                    <div className="flex gap-2">
-                      {Array.from({ length: gameState.player.lives }).map((_, i) => (
-                        <div key={i} className="text-green-500 text-2xl">▲</div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-green-400">LEVEL</span>
-                    <span className="text-white font-bold">{gameState.level}</span>
-                  </div>
-                </div>
-
-                {/* Canvas */}
-                <div className="flex justify-center bg-black p-4 rounded">
-                  <GameCanvas gameState={gameState} />
-                </div>
-
-                {/* Controls */}
-                <div className="mt-4 flex justify-between items-center">
-                  <div className="text-sm text-green-300">
-                    {hasStarted ? (
-                      <>← → or A/D: Move | SPACE: Shoot</>
-                    ) : (
-                      <>Pay 21 sats to play!</>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={toggleMute}
-                      className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
-                    >
-                      {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                    </Button>
-                    {hasStarted && !gameState.gameOver && (
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={togglePause}
-                        className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
-                      >
-                        {gameState.isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Game Over / Start Screen */}
-                {!hasStarted && (
-                  <div className="mt-4 text-center space-y-4">
-                    <Button
-                      onClick={startGame}
-                      size="lg"
-                      className="bg-green-500 text-black hover:bg-green-400 font-bold text-xl px-8 py-6"
-                    >
-                      <Zap className="mr-2 h-6 w-6" />
-                      PAY 21 SATS TO PLAY
-                    </Button>
-                  </div>
-                )}
-
-                {gameState.gameOver && (
-                  <div className="mt-4 text-center space-y-4">
-                    <div className="text-4xl text-red-500 font-bold animate-pulse mb-4">
-                      GAME OVER
-                    </div>
-                    <div className="text-2xl text-white mb-4">
-                      Final Score: {gameState.score}
-                    </div>
-                    <div className="flex justify-center gap-4">
-                      <Button
-                        onClick={startGame}
-                        size="lg"
-                        className="bg-green-500 text-black hover:bg-green-400 font-bold"
-                      >
-                        <Zap className="mr-2 h-5 w-5" />
-                        PLAY AGAIN (21 sats)
-                      </Button>
-                      {user && (
-                        <>
-                          <Button
-                            onClick={publishScore}
-                            variant="outline"
-                            size="lg"
-                            className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
-                          >
-                            <Trophy className="mr-2 h-5 w-5" />
-                            PUBLISH SCORE
-                          </Button>
-                          <Button
-                            onClick={shareScore}
-                            variant="outline"
-                            size="lg"
-                            className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
-                          >
-                            <Share2 className="mr-2 h-5 w-5" />
-                            SHARE
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+      {/* Game Stats Bar */}
+      <div className="relative z-10 bg-black border-b-2 border-green-500 px-6 py-2 flex justify-between items-center text-2xl">
+        <div className="flex items-center gap-4">
+          <span className="text-green-400">SCORE</span>
+          <span className="text-white font-bold">{gameState.score.toString().padStart(6, '0')}</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-green-400">LIVES</span>
+          <div className="flex gap-2">
+            {Array.from({ length: gameState.player.lives }).map((_, i) => (
+              <div key={i} className="text-green-500 text-2xl">▲</div>
+            ))}
           </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-green-400">LEVEL</span>
+          <span className="text-white font-bold">{gameState.level}</span>
+        </div>
+      </div>
 
-          {/* Leaderboard */}
-          <div className="space-y-4">
-            <Card className="bg-gray-900 border-green-500 border-2 shadow-[0_0_20px_rgba(0,255,0,0.3)]">
-              <CardContent className="p-6">
-                <h2 className="text-2xl font-bold text-green-400 mb-4 flex items-center gap-2">
-                  <Trophy className="h-6 w-6" />
-                  TOP SCORES
-                </h2>
-                <div className="space-y-2">
-                  {leaderboard && leaderboard.length > 0 ? (
-                    leaderboard.slice(0, 10).map((score, index) => (
-                      <div
-                        key={score.event.id}
-                        className={`flex justify-between items-center p-2 rounded ${
-                          index === 0
-                            ? 'bg-yellow-900/30 border border-yellow-500'
-                            : index === 1
-                            ? 'bg-gray-700/30 border border-gray-400'
-                            : index === 2
-                            ? 'bg-orange-900/30 border border-orange-600'
-                            : 'bg-gray-800/30'
-                        }`}
+      {/* Game Canvas - Full Screen */}
+      <div className="relative z-10 flex-1 flex items-center justify-center bg-black p-8">
+        <div className="relative">
+          <GameCanvas gameState={gameState} />
+          
+          {/* Overlays */}
+          {!hasStarted && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+              <div className="text-center space-y-6">
+                <div className="text-6xl text-green-400 animate-pulse font-bold">
+                  INSERT COIN
+                </div>
+                <Button
+                  onClick={startGame}
+                  size="lg"
+                  className="bg-green-500 text-black hover:bg-green-400 font-bold text-2xl px-12 py-8"
+                >
+                  <Zap className="mr-3 h-8 w-8" />
+                  PAY 21 SATS TO PLAY
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {gameState.gameOver && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/90">
+              <div className="text-center space-y-6">
+                <div className="text-6xl text-red-500 font-bold animate-pulse mb-6">
+                  GAME OVER
+                </div>
+                <div className="text-4xl text-white mb-6">
+                  FINAL SCORE: {gameState.score}
+                </div>
+                <div className="flex flex-col gap-4">
+                  <Button
+                    onClick={startGame}
+                    size="lg"
+                    className="bg-green-500 text-black hover:bg-green-400 font-bold text-xl px-8 py-6"
+                  >
+                    <Zap className="mr-2 h-6 w-6" />
+                    PLAY AGAIN (21 SATS)
+                  </Button>
+                  {user && (
+                    <div className="flex gap-4">
+                      <Button
+                        onClick={publishScore}
+                        variant="outline"
+                        size="lg"
+                        className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg"
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="text-green-300 font-bold w-6">
-                            #{index + 1}
-                          </span>
-                          <span className="text-white truncate max-w-[120px]">
-                            {score.event.pubkey.slice(0, 8)}...
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-green-400 font-bold">
-                            {score.score.toLocaleString()}
-                          </div>
-                          <div className="text-xs text-green-600">
-                            L{score.level}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center text-green-600 py-8">
-                      No scores yet. Be the first!
+                        <Trophy className="mr-2 h-5 w-5" />
+                        PUBLISH SCORE
+                      </Button>
+                      <Button
+                        onClick={shareScore}
+                        variant="outline"
+                        size="lg"
+                        className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg"
+                      >
+                        <Share2 className="mr-2 h-5 w-5" />
+                        SHARE
+                      </Button>
                     </div>
                   )}
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-gray-900 border-green-500 border-2 shadow-[0_0_20px_rgba(0,255,0,0.3)]">
-              <CardContent className="p-6">
-                <h3 className="text-xl font-bold text-green-400 mb-3">HOW TO PLAY</h3>
-                <ul className="space-y-2 text-green-300 text-sm">
-                  <li>• Pay 21 sats to start</li>
-                  <li>• Destroy all invaders</li>
-                  <li>• Earn points for each hit</li>
-                  <li>• Music speeds up as you win</li>
-                  <li>• Share your score on Nostr</li>
-                </ul>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-8 text-green-600 text-sm">
-          <p>Vibed with MKStack • Powered by Lightning ⚡</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Footer */}
+      <div className="relative z-10 bg-black border-t-2 border-green-500 px-6 py-2 text-center text-green-600 text-lg">
+        {hasStarted ? (
+          <span>← → or A/D: MOVE | SPACE: SHOOT</span>
+        ) : (
+          <span>VIBED WITH MKSTACK • POWERED BY LIGHTNING ⚡</span>
+        )}
+      </div>
+
+      {/* Leaderboard Dialog */}
+      <Dialog open={showLeaderboard} onOpenChange={setShowLeaderboard}>
+        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
+          <DialogHeader>
+            <DialogTitle className="text-3xl text-green-400 flex items-center gap-2">
+              <Trophy className="h-8 w-8" />
+              TOP SCORES
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {leaderboard && leaderboard.length > 0 ? (
+              leaderboard.map((score, index) => (
+                <div
+                  key={score.event.id}
+                  className={`flex justify-between items-center p-3 rounded text-xl ${
+                    index === 0
+                      ? 'bg-yellow-900/30 border border-yellow-500'
+                      : index === 1
+                      ? 'bg-gray-700/30 border border-gray-400'
+                      : index === 2
+                      ? 'bg-orange-900/30 border border-orange-600'
+                      : 'bg-gray-800/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-green-300 font-bold w-8">
+                      #{index + 1}
+                    </span>
+                    <span className="text-white truncate max-w-[180px]">
+                      {score.event.pubkey.slice(0, 12)}...
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-green-400 font-bold">
+                      {score.score.toLocaleString()}
+                    </div>
+                    <div className="text-sm text-green-600">
+                      LEVEL {score.level}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center text-green-600 py-12 text-xl">
+                NO SCORES YET. BE THE FIRST!
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* How to Play Dialog */}
+      <Dialog open={showHowToPlay} onOpenChange={setShowHowToPlay}>
+        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
+          <DialogHeader>
+            <DialogTitle className="text-3xl text-green-400 flex items-center gap-2">
+              <HelpCircle className="h-8 w-8" />
+              HOW TO PLAY
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-xl text-green-300">
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-400">⚡</span>
+              <span>PAY 21 SATS TO START THE GAME</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-400">👾</span>
+              <span>DESTROY ALL INVADERS TO WIN</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-400">🎯</span>
+              <span>EARN POINTS FOR EACH HIT</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-400">🎵</span>
+              <span>MUSIC SPEEDS UP AS YOU DESTROY INVADERS</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-400">🏆</span>
+              <span>PUBLISH YOUR SCORE ON NOSTR</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-400">🔑</span>
+              <span>USE ← → OR A/D TO MOVE</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-400">🚀</span>
+              <span>PRESS SPACE TO SHOOT</span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Payment Dialog */}
       <Dialog open={showPayment} onOpenChange={(open) => {
@@ -564,21 +615,21 @@ export function Game() {
           setInvoiceCopied(false);
         }
       }}>
-        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md">
+        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
           <DialogHeader>
-            <DialogTitle className="text-2xl text-green-400">Pay to Play</DialogTitle>
-            <DialogDescription className="text-green-300">
-              Send 21 sats via Lightning to play Space Zapper
+            <DialogTitle className="text-3xl text-green-400">INSERT COIN</DialogTitle>
+            <DialogDescription className="text-green-300 text-lg">
+              SEND 21 SATS VIA LIGHTNING TO PLAY
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {!lightningInvoice ? (
               <>
                 <div className="text-center py-6">
-                  <div className="text-6xl mb-4">⚡</div>
-                  <div className="text-3xl font-bold text-yellow-400">21 SATS</div>
-                  <div className="text-sm text-green-600 mt-2">
-                    to {RECIPIENT_LIGHTNING_ADDRESS}
+                  <div className="text-7xl mb-4">⚡</div>
+                  <div className="text-5xl font-bold text-yellow-400">21 SATS</div>
+                  <div className="text-lg text-green-600 mt-2">
+                    TO {RECIPIENT_LIGHTNING_ADDRESS}
                   </div>
                 </div>
 
@@ -587,13 +638,13 @@ export function Game() {
                     <Button
                       onClick={handleWalletPayment}
                       disabled={isPaymentProcessing}
-                      className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-lg py-6"
+                      className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-xl py-7"
                     >
                       {isPaymentProcessing ? (
-                        <>Processing...</>
+                        <>PROCESSING...</>
                       ) : (
                         <>
-                          <Zap className="mr-2 h-5 w-5" />
+                          <Zap className="mr-2 h-6 w-6" />
                           PAY WITH WALLET
                         </>
                       )}
@@ -604,8 +655,8 @@ export function Game() {
                     <div className="absolute inset-0 flex items-center">
                       <span className="w-full border-t border-green-700" />
                     </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-gray-900 px-2 text-green-600">Or</span>
+                    <div className="relative flex justify-center text-base uppercase">
+                      <span className="bg-gray-900 px-2 text-green-600">OR</span>
                     </div>
                   </div>
 
@@ -613,10 +664,10 @@ export function Game() {
                     onClick={handleGenerateInvoice}
                     disabled={isPaymentProcessing}
                     variant="outline"
-                    className="w-full border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-bold text-lg py-6"
+                    className="w-full border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-bold text-xl py-7"
                   >
                     {isPaymentProcessing ? (
-                      <>Generating...</>
+                      <>GENERATING...</>
                     ) : (
                       <>GET LIGHTNING INVOICE</>
                     )}
@@ -628,20 +679,20 @@ export function Game() {
                 <div className="text-center space-y-4">
                   {qrCodeDataUrl && (
                     <div className="flex justify-center">
-                      <img
-                        src={qrCodeDataUrl}
+                      <img 
+                        src={qrCodeDataUrl} 
                         alt="Lightning Invoice QR Code"
                         className="rounded-lg border-4 border-green-500"
                       />
                     </div>
                   )}
 
-                  <div className="text-sm text-green-400">
-                    Scan with your Lightning wallet
+                  <div className="text-lg text-green-400">
+                    SCAN WITH YOUR LIGHTNING WALLET
                   </div>
 
                   <div className="bg-black p-3 rounded border border-green-700">
-                    <div className="text-xs text-green-500 break-all font-mono">
+                    <div className="text-xs text-green-500 break-all">
                       {lightningInvoice.slice(0, 60)}...
                     </div>
                   </div>
@@ -650,29 +701,29 @@ export function Game() {
                     <Button
                       onClick={copyInvoice}
                       variant="outline"
-                      className="flex-1 border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
+                      className="flex-1 border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg py-5"
                     >
                       {invoiceCopied ? (
                         <>
-                          <Check className="mr-2 h-4 w-4" />
-                          Copied!
+                          <Check className="mr-2 h-5 w-5" />
+                          COPIED!
                         </>
                       ) : (
                         <>
-                          <Copy className="mr-2 h-4 w-4" />
-                          Copy Invoice
+                          <Copy className="mr-2 h-5 w-5" />
+                          COPY INVOICE
                         </>
                       )}
                     </Button>
                   </div>
 
                   <div className="pt-4 border-t border-green-700">
-                    <div className="text-xs text-green-600 mb-3">
-                      After paying the invoice, click below to start playing
+                    <div className="text-sm text-green-600 mb-3">
+                      AFTER PAYING, CLICK BELOW TO START
                     </div>
                     <Button
                       onClick={confirmPayment}
-                      className="w-full bg-green-500 text-black hover:bg-green-400 font-bold"
+                      className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-xl py-6"
                     >
                       I PAID - START GAME
                     </Button>
@@ -684,9 +735,9 @@ export function Game() {
                       setQrCodeDataUrl(null);
                     }}
                     variant="ghost"
-                    className="w-full text-green-600 hover:text-green-400"
+                    className="w-full text-green-600 hover:text-green-400 text-lg"
                   >
-                    ← Back
+                    ← BACK
                   </Button>
                 </div>
               </>
