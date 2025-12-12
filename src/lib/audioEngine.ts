@@ -8,12 +8,13 @@ class AudioEngine {
   private musicInterval: number | null = null;
   private currentTempo = 500; // milliseconds between beats
   private minTempo = 150;
-  private isMusicPlaying = false;
+  public isMusicPlaying = false;
   private isMuted = false;
 
   initialize() {
     if (!this.context) {
       this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      console.log('[Audio] AudioContext initialized');
     }
   }
 
@@ -208,11 +209,16 @@ class AudioEngine {
   }
 
   startMusic(tempo: number = 500) {
-    if (this.isMusicPlaying) return;
+    if (this.isMusicPlaying) {
+      console.log('[Audio] Music already playing');
+      return;
+    }
 
     this.initialize();
     this.currentTempo = tempo;
     this.isMusicPlaying = true;
+
+    console.log('[Audio] Starting music with tempo:', tempo);
 
     let beatIndex = 0;
 

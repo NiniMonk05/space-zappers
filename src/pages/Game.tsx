@@ -159,15 +159,20 @@ export function Game() {
   // Start music on first interaction (browsers block auto-play)
   useEffect(() => {
     const handleFirstInteraction = () => {
+      console.log('[Game] First interaction detected, starting music');
       audioEngine.initialize();
       if (!isMuted) {
         audioEngine.startMusic();
+        console.log('[Game] Music should be playing now');
+      } else {
+        console.log('[Game] Music muted, not starting');
       }
       // Remove listeners after first interaction
       document.removeEventListener('click', handleFirstInteraction);
       document.removeEventListener('keydown', handleFirstInteraction);
     };
 
+    console.log('[Game] Setting up music auto-start listeners');
     document.addEventListener('click', handleFirstInteraction);
     document.addEventListener('keydown', handleFirstInteraction);
 
@@ -488,7 +493,7 @@ export function Game() {
             <div className="absolute inset-0 flex items-center justify-center bg-black/80">
               <div className="text-center space-y-6">
                 <div className="text-6xl text-green-400 animate-pulse font-bold">
-                  INSERT COIN
+                  INSERT BITCOIN
                 </div>
                 <div className="space-y-3">
                   <Button
@@ -574,7 +579,7 @@ export function Game() {
         {hasStarted ? (
           <span>← → or A/D: MOVE | SPACE: SHOOT</span>
         ) : (
-          <span>VIBED WITH MKSTACK • POWERED BY LIGHTNING ⚡</span>
+          <span>VIBED BY NINIMONK05 • POWERED BY LIGHTNING ⚡</span>
         )}
       </div>
 
