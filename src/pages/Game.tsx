@@ -156,15 +156,27 @@ export function Game() {
     };
   }, [hasStarted, gameState.gameOver, gameState.isPaused, keys]);
 
-  // Start music when page loads
+  // Start music on first interaction (browsers block auto-play)
   useEffect(() => {
-    audioEngine.initialize();
-    audioEngine.startMusic();
+    const handleFirstInteraction = () => {
+      audioEngine.initialize();
+      if (!isMuted) {
+        audioEngine.startMusic();
+      }
+      // Remove listeners after first interaction
+      document.removeEventListener('click', handleFirstInteraction);
+      document.removeEventListener('keydown', handleFirstInteraction);
+    };
+
+    document.addEventListener('click', handleFirstInteraction);
+    document.addEventListener('keydown', handleFirstInteraction);
 
     return () => {
+      document.removeEventListener('click', handleFirstInteraction);
+      document.removeEventListener('keydown', handleFirstInteraction);
       audioEngine.stopMusic();
     };
-  }, []);
+  }, [isMuted]);
 
   // Control music during gameplay
   useEffect(() => {
