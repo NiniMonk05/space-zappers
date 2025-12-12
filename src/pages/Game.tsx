@@ -24,7 +24,7 @@ import QRCode from 'qrcode';
 const GAME_COST_SATS = 21;
 const RECIPIENT_NPUB = 'npub1sfpeyr9k5jms37q4900mw9q4vze4xwhdxd4avdxjml8rqgjkre8s4lcq9l';
 const RECIPIENT_PUBKEY = '8243920cb6a4b708f8152bdfb7141560b3533aed336bd634d2dfce3022561e4f';
-const RECIPIENT_LIGHTNING_ADDRESS = 'greyparrot7@primal.net';
+const RECIPIENT_LIGHTNING_ADDRESS = 'space.zappers@bank.weeksfamily.me';
 
 export function Game() {
   const [gameState, setGameState] = useState<GameState>(createInitialState());
