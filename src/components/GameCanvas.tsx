@@ -188,19 +188,71 @@ function drawInvader(
   drawPixelArt(ctx, invader.x, invader.y, pixels, 2);
 }
 
-// Draw UFO with classic flying saucer shape
+// Draw UFO with different shapes based on point value
 function drawUFO(ctx: CanvasRenderingContext2D, x: number, y: number, points: number, color: string) {
-  // UFO body - use the UFO's color
   ctx.fillStyle = color;
 
-  const pixels = [
-    '      ████████      ',
-    '    ████████████    ',
-    '  ██████████████████',
-    '████████████████████',
-    '██  ██  ██  ██  ██  ',
-    '    ██      ██      ',
-  ];
+  // Different symmetrical shapes for each UFO type
+  let pixels: string[];
+
+  switch (points) {
+    case 50:
+      // Cyan - Classic saucer
+      pixels = [
+        '      ████████      ',
+        '    ████████████    ',
+        '  ██████████████████',
+        '████████████████████',
+        '██  ██  ██  ██  ██  ',
+        '    ██      ██      ',
+      ];
+      break;
+    case 100:
+      // Magenta - Tall dome saucer
+      pixels = [
+        '        ████        ',
+        '      ████████      ',
+        '      ████████      ',
+        '  ██████████████████',
+        '████████████████████',
+        '  ██  ██████  ██  ',
+      ];
+      break;
+    case 150:
+      // Yellow - Wide flat saucer
+      pixels = [
+        '    ████████████    ',
+        '████████████████████',
+        '██████████████████████',
+        '████████████████████',
+        '  ██    ████    ██  ',
+      ];
+      break;
+    case 300:
+      // Red - Double-decker saucer
+      pixels = [
+        '      ████████      ',
+        '    ████████████    ',
+        '████████████████████',
+        '    ████████████    ',
+        '████████████████████',
+        '  ██  ██  ██  ██  ',
+      ];
+      break;
+    case 500:
+    default:
+      // White - Large mothership (end of level)
+      pixels = [
+        '      ██████████      ',
+        '    ██████████████    ',
+        '  ██████████████████  ',
+        '██████████████████████',
+        '████████████████████████',
+        '██████████████████████',
+        '  ██  ██    ██  ██  ',
+      ];
+      break;
+  }
 
   drawPixelArt(ctx, x, y, pixels, 2.4);
 
