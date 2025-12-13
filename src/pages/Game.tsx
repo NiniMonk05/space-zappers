@@ -106,11 +106,15 @@ export function Game() {
           if (state.bonusUFO && !isMuted) {
             audioEngine.startUfoSound();
           }
+          // Resume music with correct tempo based on alive invaders
+          if (!isMuted) {
+            const aliveInvaders = state.invaders.filter((inv) => inv.isAlive).length;
+            const speedRatio = aliveInvaders / 55;
+            const tempo = Math.max(150, 500 * speedRatio);
+            audioEngine.startMusic(tempo, state.level);
+          }
           return { ...state, isPaused: false };
         });
-        if (!isMuted) {
-          audioEngine.startMusic();
-        }
         return;
       }
 
@@ -244,13 +248,19 @@ export function Game() {
       audioEngine.stopMusic();
     } else if (!gameState.isPaused && !isMuted) {
       if (!audioEngine.isMusicPlaying) {
-        audioEngine.startMusic(500, gameState.level);
+        // Calculate correct tempo based on alive invaders
+        const aliveInvaders = gameState.invaders.filter((inv) => inv.isAlive).length;
+        const speedRatio = aliveInvaders / 55;
+        const tempo = Math.max(150, 500 * speedRatio);
+        audioEngine.startMusic(tempo, gameState.level);
       }
     }
 
     return () => {
       audioEngine.stopMusic();
     };
+  // Note: gameState.invaders intentionally not in deps to avoid re-running on every kill
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, gameState.level]);
 
   const handleWalletPayment = async () => {
@@ -376,6 +386,11 @@ export function Game() {
     if (!freeMode && !hasPaid) {
       setShowPayment(true);
       return;
+    }
+
+    // Consume the payment - next game will require new payment
+    if (!freeMode && hasPaid) {
+      setHasPaid(false);
     }
 
     if (freeMode) {
@@ -543,7 +558,7 @@ export function Game() {
           <h1 className="text-4xl font-bold tracking-wider text-green-400 drop-shadow-[0_0_10px_rgba(0,255,0,0.8)]">
             SPACE ZAPPERS
           </h1>
-          <div className="bg-yellow-400 text-black text-sm px-3 py-1 rounded font-bold">
+          <div className="bg-purple-500 text-white text-sm px-3 py-1 rounded font-bold">
             ⚡ 21 SATS
           </div>
         </div>
@@ -692,10 +707,10 @@ export function Game() {
           {showLevelPopup && hasStarted && !gameState.gameOver && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
               <div className="text-center animate-pulse">
-                <div className="text-8xl text-green-400 font-bold drop-shadow-[0_0_20px_rgba(0,255,0,0.8)]">
+                <div className="text-8xl font-bold drop-shadow-[0_0_20px_rgba(247,147,26,0.8)]" style={{ color: '#f7931a' }}>
                   LEVEL {displayedLevel}
                 </div>
-                <div className="text-3xl text-yellow-400 mt-4">
+                <div className="text-3xl text-green-400 mt-4">
                   GET READY!
                 </div>
               </div>
@@ -796,7 +811,7 @@ export function Game() {
               TOP SCORES
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
+          <div className="space-y-1 max-h-96 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-green-500 [&::-webkit-scrollbar-thumb]:rounded">
             {leaderboard && leaderboard.length > 0 ? (
               leaderboard.map((score, index) => {
                 const isCurrentUser = user && score.event.pubkey === user.pubkey;
@@ -805,7 +820,7 @@ export function Game() {
                 return (
                   <div
                     key={score.event.id}
-                    className={`flex justify-between items-center p-3 rounded text-xl transition-all ${
+                    className={`flex justify-between items-center p-2 rounded text-base transition-all ${
                       isHighlighted
                         ? 'bg-orange-500/30 border-2 border-orange-500 animate-pulse'
                         : isCurrentUser
@@ -819,11 +834,11 @@ export function Game() {
                         : 'bg-gray-800/30'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className={`font-bold w-8 ${isHighlighted ? 'text-orange-400' : 'text-green-300'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold w-7 ${isHighlighted ? 'text-orange-400' : 'text-green-300'}`}>
                         #{index + 1}
                       </span>
-                      <span className={`truncate max-w-[180px] ${isCurrentUser ? 'text-orange-400 font-bold' : 'text-white'}`}>
+                      <span className={`truncate max-w-[160px] ${isCurrentUser ? 'text-orange-400 font-bold' : 'text-white'}`}>
                         {isCurrentUser ? (name || 'YOU') : `${score.event.pubkey.slice(0, 8)}...`}
                       </span>
                     </div>
@@ -831,15 +846,15 @@ export function Game() {
                       <div className={`font-bold ${isHighlighted ? 'text-orange-400' : 'text-green-400'}`}>
                         {score.score.toLocaleString()}
                       </div>
-                      <div className="text-sm text-green-600">
-                        LEVEL {score.level}
+                      <div className="text-xs text-green-600">
+                        LVL {score.level}
                       </div>
                     </div>
                   </div>
                 );
               })
             ) : (
-              <div className="text-center text-green-600 py-12 text-xl">
+              <div className="text-center text-green-600 py-12 text-lg">
                 NO SCORES YET. BE THE FIRST!
               </div>
             )}
