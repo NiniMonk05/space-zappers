@@ -1,6 +1,11 @@
 # Build stage for game client
 FROM node:20-alpine AS builder
 WORKDIR /app
+
+# Game pubkey for leaderboard queries (public, derived from GAME_NSEC)
+ARG VITE_GAME_PUBKEY=6c95ab59b0ebf56296f45b8b52b9b0f2599029c173a8c5fd463ef0a474995fcc
+ENV VITE_GAME_PUBKEY=$VITE_GAME_PUBKEY
+
 COPY package*.json ./
 RUN npm ci
 COPY . .

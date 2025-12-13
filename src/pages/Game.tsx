@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle, LogOut, Wallet, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameCanvas } from '@/components/GameCanvas';
+import { LeaderboardEntry } from '@/components/LeaderboardEntry';
 import { LoginArea } from '@/components/auth/LoginArea';
 import LoginDialog from '@/components/auth/LoginDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -848,43 +849,18 @@ export function Game() {
           <div className="space-y-1 max-h-96 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-green-500 [&::-webkit-scrollbar-thumb]:rounded">
             {leaderboard && leaderboard.length > 0 ? (
               leaderboard.map((score, index) => {
-                const isCurrentUser = user && score.event.pubkey === user.pubkey;
+                const isCurrentUser = user && score.pubkey === user.pubkey;
                 const isHighlighted = isCurrentUser && highlightedScore === score.score;
 
                 return (
-                  <div
+                  <LeaderboardEntry
                     key={score.event.id}
-                    className={`flex justify-between items-center p-2 rounded text-base transition-all ${
-                      isHighlighted
-                        ? 'bg-orange-500/30 border-2 border-orange-500 animate-pulse'
-                        : isCurrentUser
-                        ? 'bg-orange-900/20 border border-orange-500/50'
-                        : index === 0
-                        ? 'bg-yellow-900/30 border border-yellow-500'
-                        : index === 1
-                        ? 'bg-gray-700/30 border border-gray-400'
-                        : index === 2
-                        ? 'bg-orange-900/30 border border-orange-600'
-                        : 'bg-gray-800/30'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={`font-bold w-7 ${isHighlighted ? 'text-orange-400' : 'text-green-300'}`}>
-                        #{index + 1}
-                      </span>
-                      <span className={`truncate max-w-[160px] ${isCurrentUser ? 'text-orange-400 font-bold' : 'text-white'}`}>
-                        {isCurrentUser ? (name || 'YOU') : `${score.event.pubkey.slice(0, 8)}...`}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <div className={`font-bold ${isHighlighted ? 'text-orange-400' : 'text-green-400'}`}>
-                        {score.score.toLocaleString()}
-                      </div>
-                      <div className="text-xs text-green-600">
-                        LVL {score.level}
-                      </div>
-                    </div>
-                  </div>
+                    score={score}
+                    index={index}
+                    isCurrentUser={!!isCurrentUser}
+                    isHighlighted={!!isHighlighted}
+                    currentUserName={name}
+                  />
                 );
               })
             ) : (

@@ -17,11 +17,20 @@ Space Zappers is a browser-based Space Invaders game built with React, TypeScrip
 ## Commands
 
 ```bash
-npm run dev      # Start dev server
+npm run dev      # Start game (8088) + score service (8089) concurrently
 npm run build    # Production build (outputs to dist/)
 npm run test     # Full validation: TypeScript check, ESLint, Vitest, then build
 npm run deploy   # Build and deploy via nostr-deploy-cli
 ```
+
+### Local Development Setup
+1. Create `.env.local` with:
+   ```
+   GAME_NSEC=nsec1...
+   VITE_GAME_PUBKEY=<64-char-hex-pubkey>
+   ```
+2. Run `npm run dev` - starts both frontend and score service
+3. Access game at http://localhost:8088
 
 Always run `npm run test` after making changes to validate TypeScript, linting, and tests pass.
 
@@ -36,8 +45,12 @@ Always run `npm run test` after making changes to validate TypeScript, linting, 
 ### Nostr Integration
 - `src/components/NostrProvider.tsx` - Nostr context setup
 - `src/hooks/useNostrPublish.ts` - Publish events to Nostr
-- `src/hooks/useGameScores.ts` - Query leaderboard (kind 8549)
+- `src/hooks/useGameScores.ts` - Query leaderboard (kind 30762 via Gamestr)
 - `src/hooks/usePaymentConfirmation.ts` - Listen for payment events (kind 8550)
+- `src/components/LeaderboardEntry.tsx` - Displays player name via profile lookup
+
+### Score Service
+The `score-service/` directory contains a Node.js API that signs score events with the game's private key (GAME_NSEC). This prevents players from faking scores.
 
 ### Lightning Payment Flow
 1. User clicks "Pay 21 sats" → generates invoice via `src/lib/lightningInvoice.ts`
@@ -45,8 +58,8 @@ Always run `npm run test` after making changes to validate TypeScript, linting, 
 3. LNbits webhook publishes kind 8550 event to Nostr on payment
 4. Frontend subscribes to payment-id tag, auto-starts game when confirmed
 
-### Custom Event Kinds (see NIP.md)
-- **Kind 8549**: Game scores (score, level, game identifier)
+### Event Kinds (see NIP.md)
+- **Kind 30762**: Game scores ([Gamestr spec](https://gamestr.io/developers)) - signed by game, not player
 - **Kind 8550**: Payment confirmations from webhook
 
 ### Provider Hierarchy (App.tsx)
@@ -76,16 +89,21 @@ Custom rules in `eslint-rules/`:
 
 ## Key Patterns
 
-### Querying Nostr Data
+### Querying Game Scores
 ```typescript
-const { nostr } = useNostr();
-const events = await nostr.query([{ kinds: [8549], '#t': ['space-zapper'], limit: 100 }], { signal });
+// Scores are queried by game author pubkey (relays don't index #game tag)
+const GAME_PUBKEY = import.meta.env.VITE_GAME_PUBKEY;
+const events = await gamePool.query([{ kinds: [30762], authors: [GAME_PUBKEY], limit: 100 }], { signal });
 ```
 
-### Publishing Events
+### Publishing Scores (via API)
 ```typescript
-const { mutate: publishEvent } = useNostrPublish();
-publishEvent({ kind: 8549, content: JSON.stringify({ score, level }), tags: [...] });
+// Client calls score service API, which signs with GAME_NSEC
+await fetch('/api/publish-score', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ playerPubkey, score, level }),
+});
 ```
 
 ### User Authentication
@@ -107,3 +125,4 @@ if (!user) return <LoginArea />;
 - See WEBHOOK.md for LNbits webhook setup documentation
 - Game costs 21 sats to play (free mode available for testing)
 - Scores only publishable for paid games
+- Do not deploy to the docker container before we confirm it's working locally

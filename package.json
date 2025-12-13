@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npm i --silent && vite",
+    "dev": "npm i --silent && dotenv -e .env.local -- concurrently -n game,api -c cyan,green \"vite\" \"cd score-service && npm i --silent && PORT=8089 node index.js\"",
+    "dev:frontend": "npm i --silent && vite",
     "build": "npm i --silent && vite build -l error && cp dist/index.html dist/404.html && echo 'Project built successfully!'",
     "test": "npm i --silent && tsc --noEmit && eslint && vitest run --reporter=dot --silent && vite build -l error && cp dist/index.html dist/404.html && echo 'All tests passed!'",
     "deploy": "npm i --silent && npm run build && npx -y nostr-deploy-cli deploy --skip-setup"
@@ -99,6 +100,8 @@
     "@vitejs/plugin-react-swc": "^3.5.0",
     "@webbtc/webln-types": "^3.0.0",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^9.2.1",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9.9.0",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.9",

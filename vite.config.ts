@@ -7,12 +7,13 @@ import { defineConfig } from "vitest/config";
 export default defineConfig(() => ({
   server: {
     host: "::",
-    port: 8080,
+    port: 8088,
     proxy: {
-      // Proxy /api to score service (running in Docker on port 3001)
+      // Proxy /api to local score service on port 8089
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:8089',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },

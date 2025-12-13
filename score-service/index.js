@@ -1,5 +1,9 @@
 import http from 'node:http';
+import WebSocket from 'ws';
 import { nip19, finalizeEvent, SimplePool } from 'nostr-tools';
+
+// Polyfill WebSocket for Node.js
+globalThis.WebSocket = WebSocket;
 
 const PORT = process.env.PORT || 3002;
 const GAME_NSEC = process.env.GAME_NSEC;
@@ -94,12 +98,34 @@ async function publishScore({ playerPubkey, score, level, difficulty, duration }
 
   console.log('Publishing score event:', signedEvent.id);
 
-  // Publish to relays
-  const results = await Promise.allSettled(
-    pool.publish(RELAYS, signedEvent)
-  );
+  // Publish to relays with timeout
+  let successful = 0;
+  try {
+    console.log('Connecting to relays...');
+    const publishPromises = pool.publish(RELAYS, signedEvent);
 
-  const successful = results.filter(r => r.status === 'fulfilled').length;
+    // Add timeout for each relay connection
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Publish timeout after 10s')), 10000)
+    );
+
+    const results = await Promise.race([
+      Promise.allSettled(publishPromises),
+      timeoutPromise.then(() => [])
+    ]);
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        successful++;
+        console.log('Relay accepted:', result.value);
+      } else {
+        console.log('Relay rejected:', result.reason?.message || result.reason);
+      }
+    }
+  } catch (err) {
+    console.error('Publish error:', err.message);
+  }
+
   console.log(`Published to ${successful}/${RELAYS.length} relays`);
 
   return {
@@ -131,6 +157,12 @@ const server = http.createServer(async (req, res) => {
       // Validate required fields
       if (!body.playerPubkey || typeof body.score !== 'number' || typeof body.level !== 'number') {
         sendJson(res, 400, { error: 'Missing required fields: playerPubkey, score, level' });
+        return;
+      }
+
+      // Validate playerPubkey is a valid 64-char hex string
+      if (!/^[0-9a-f]{64}$/i.test(body.playerPubkey)) {
+        sendJson(res, 400, { error: 'Invalid playerPubkey: must be 64-character hex string' });
         return;
       }
 

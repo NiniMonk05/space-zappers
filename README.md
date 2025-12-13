@@ -88,8 +88,10 @@ The score service holds the game's private key (nsec) and signs score events on 
 ### Querying Scores
 
 ```javascript
+// Query by game author pubkey (relays don't index #game tag)
+const GAME_PUBKEY = '6c95ab59b0ebf56296f45b8b52b9b0f2599029c173a8c5fd463ef0a474995fcc';
 const scores = await nostr.query([
-  { kinds: [30762], '#game': ['space-zappers'], limit: 100 }
+  { kinds: [30762], authors: [GAME_PUBKEY], limit: 100 }
 ]);
 ```
 
