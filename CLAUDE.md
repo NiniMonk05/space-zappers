@@ -58,6 +58,14 @@ The `score-service/` directory contains a Node.js API that signs score events wi
 3. LNbits webhook publishes kind 8550 event to Nostr on payment
 4. Frontend subscribes to payment-id tag, auto-starts game when confirmed
 
+### NWC (Nostr Wallet Connect)
+- `src/hooks/useNWC.ts` - NWC connection management
+- `src/hooks/useNWCContext.ts` - React context for NWC
+- `src/hooks/useWallet.ts` - Unified wallet interface (NWC + WebLN)
+- Connections stored in localStorage (`nwc-connections`, `nwc-active-connection`)
+- Persists indefinitely until user disconnects or clears browser data
+- Payment priority: NWC → WebLN → Manual invoice
+
 ### Event Kinds (see NIP.md)
 - **Kind 30762**: Game scores ([Gamestr spec](https://gamestr.io/developers)) - signed by game, not player
 - **Kind 8550**: Payment confirmations from webhook

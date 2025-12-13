@@ -59,6 +59,10 @@ npm run deploy
 
 See [WEBHOOK.md](./WEBHOOK.md) for webhook setup instructions.
 
+### Wallet Connection (NWC)
+
+Players can connect a Lightning wallet via [Nostr Wallet Connect (NWC)](https://nwc.dev) for one-click payments. The connection is stored in localStorage and persists across browser sessions until manually disconnected.
+
 ## Nostr Integration
 
 Space Zappers uses the [Gamestr](https://gamestr.io) protocol for decentralized leaderboards.
