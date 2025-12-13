@@ -40,9 +40,21 @@ export function useCurrentUser() {
   const user = users[0] as NUser | undefined;
   const author = useAuthor(user?.pubkey);
 
+  // Extract metadata fields for easy access (picture, name, about, etc.)
+  const metadata = author.data?.metadata;
+
   return {
     user,
     users,
-    ...author.data,
+    event: author.data?.event,
+    metadata,
+    // Spread common metadata fields for convenience
+    picture: metadata?.picture,
+    name: metadata?.name,
+    about: metadata?.about,
+    nip05: metadata?.nip05,
+    banner: metadata?.banner,
+    lud16: metadata?.lud16,
+    lud06: metadata?.lud06,
   };
 }

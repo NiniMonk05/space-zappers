@@ -1,13 +1,22 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameCanvas } from '@/components/GameCanvas';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useLoginActions } from '@/hooks/useLoginActions';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useGameScores, GAME_SCORE_KIND } from '@/hooks/useGameScores';
 import { useToast } from '@/hooks/useToast';
 import { useWallet } from '@/hooks/useWallet';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   createInitialState,
   updateGame,
@@ -20,6 +29,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { usePaymentConfirmation } from '@/hooks/usePaymentConfirmation';
 import { generatePaymentId } from '@/lib/paymentVerification';
 import QRCode from 'qrcode';
+import { TankLives } from '@/components/TankLives';
 
 const GAME_COST_SATS = 21;
 const RECIPIENT_NPUB = 'npub1sfpeyr9k5jms37q4900mw9q4vze4xwhdxd4avdxjml8rqgjkre8s4lcq9l';
@@ -41,16 +51,27 @@ export function Game() {
   const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(null);
   const [isFreePlay, setIsFreePlay] = useState(false);
+  const [showLevelPopup, setShowLevelPopup] = useState(false);
+  const [displayedLevel, setDisplayedLevel] = useState(1);
+  const [playerFlashing, setPlayerFlashing] = useState(false);
+  const [showLoginToSave, setShowLoginToSave] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareMessage, setShareMessage] = useState('');
   const gameLoopRef = useRef<number>();
   const previousScoreRef = useRef(0);
   const previousLevelRef = useRef(1);
   const previousInvaderCountRef = useRef(55);
+  const previousLivesRef = useRef(3);
 
-  const { user } = useCurrentUser();
+  const { user, picture, name } = useCurrentUser();
+  const { logout } = useLoginActions();
+  const queryClient = useQueryClient();
   const { mutate: publishEvent } = useNostrPublish();
-  const { data: leaderboard } = useGameScores(10);
+  const { data: leaderboard, refetch: refetchLeaderboard } = useGameScores(50);
   const { toast } = useToast();
   const wallet = useWallet();
+  const [highlightedScore, setHighlightedScore] = useState<number | null>(null);
+  const [hasPublishedScore, setHasPublishedScore] = useState(false);
 
   // Listen for payment confirmation via Nostr webhook
   const { isConfirmed: paymentConfirmed } = usePaymentConfirmation({
@@ -63,7 +84,7 @@ export function Game() {
       setCurrentPaymentId(null);
       toast({
         title: 'Payment confirmed! ⚡',
-        description: 'Starting Space Zapper...',
+        description: 'Starting Space Zappers...',
       });
     },
   });
@@ -71,11 +92,34 @@ export function Game() {
   // Handle keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (['ArrowLeft', 'ArrowRight', 'a', 'd', ' '].includes(e.key)) {
+      // Any key unpauses the game
+      if (hasStarted && gameState.isPaused && !gameState.gameOver) {
+        e.preventDefault();
+        setGameState((state) => {
+          // Resume UFO sound if UFO is present
+          if (state.bonusUFO && !isMuted) {
+            audioEngine.startUfoSound();
+          }
+          return { ...state, isPaused: false };
+        });
+        if (!isMuted) {
+          audioEngine.startMusic();
+        }
+        return;
+      }
+
+      if (['ArrowLeft', 'ArrowRight', 'a', 'd', ' ', 'Escape'].includes(e.key)) {
         e.preventDefault();
         setKeys((prev) => new Set(prev).add(e.key));
 
-        if (e.key === ' ' && hasStarted && !gameState.gameOver) {
+        // Escape key pauses the game and music
+        if (e.key === 'Escape' && hasStarted && !gameState.gameOver && !gameState.isPaused) {
+          setGameState((state) => ({ ...state, isPaused: true }));
+          audioEngine.stopMusic();
+          audioEngine.stopUfoSound();
+        }
+
+        if (e.key === ' ' && hasStarted && !gameState.gameOver && !gameState.isPaused) {
           setGameState((state) => {
             const newState = shootBullet(state);
             if (newState !== state) {
@@ -102,7 +146,7 @@ export function Game() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [hasStarted, gameState.gameOver]);
+  }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted]);
 
   // Game loop
   useEffect(() => {
@@ -119,13 +163,30 @@ export function Game() {
 
         // Play sound effects
         if (newState.score > previousScoreRef.current) {
-          audioEngine.playExplosion();
+          // Check if UFO was hit
+          if (state.bonusUFO && !newState.bonusUFO) {
+            audioEngine.playUfoHit();
+          } else {
+            audioEngine.playExplosion();
+          }
           previousScoreRef.current = newState.score;
         }
 
         if (newState.level > previousLevelRef.current) {
           audioEngine.playLevelUp();
+          audioEngine.setLevel(newState.level); // Update music to new level
           previousLevelRef.current = newState.level;
+          // Show level popup
+          setDisplayedLevel(newState.level);
+          setShowLevelPopup(true);
+          setTimeout(() => setShowLevelPopup(false), 2000);
+        }
+
+        // Handle UFO sound
+        if (newState.ufoSoundPlaying && !audioEngine.isUfoPlaying) {
+          audioEngine.startUfoSound();
+        } else if (!newState.ufoSoundPlaying && audioEngine.isUfoPlaying) {
+          audioEngine.stopUfoSound();
         }
 
         // Update music tempo based on invader count
@@ -136,9 +197,19 @@ export function Game() {
           previousInvaderCountRef.current = aliveInvaders;
         }
 
+        // Detect player hit (lost a life)
+        if (newState.player.lives < previousLivesRef.current && !newState.gameOver) {
+          audioEngine.playPlayerHit();
+          previousLivesRef.current = newState.player.lives;
+          // Flash the tank
+          setPlayerFlashing(true);
+          setTimeout(() => setPlayerFlashing(false), 500);
+        }
+
         if (newState.gameOver && !state.gameOver) {
           audioEngine.playGameOver();
           audioEngine.stopMusic();
+          audioEngine.stopUfoSound();
         }
 
         return newState;
@@ -156,43 +227,25 @@ export function Game() {
     };
   }, [hasStarted, gameState.gameOver, gameState.isPaused, keys]);
 
-  // Start music on first interaction (browsers block auto-play)
+  // Control music during gameplay - only plays when game is active
   useEffect(() => {
-    const handleFirstInteraction = () => {
-      console.log('[Game] First interaction detected, starting music');
-      audioEngine.initialize();
-      if (!isMuted) {
-        audioEngine.startMusic();
-        console.log('[Game] Music should be playing now');
-      } else {
-        console.log('[Game] Music muted, not starting');
-      }
-      // Remove listeners after first interaction
-      document.removeEventListener('click', handleFirstInteraction);
-      document.removeEventListener('keydown', handleFirstInteraction);
-    };
+    if (!hasStarted) {
+      // Don't start music until game starts
+      return;
+    }
 
-    console.log('[Game] Setting up music auto-start listeners');
-    document.addEventListener('click', handleFirstInteraction);
-    document.addEventListener('keydown', handleFirstInteraction);
-
-    return () => {
-      document.removeEventListener('click', handleFirstInteraction);
-      document.removeEventListener('keydown', handleFirstInteraction);
-      audioEngine.stopMusic();
-    };
-  }, [isMuted]);
-
-  // Control music during gameplay
-  useEffect(() => {
     if (gameState.gameOver) {
       audioEngine.stopMusic();
     } else if (!gameState.isPaused && !isMuted) {
-      if (!audioEngine['isMusicPlaying']) {
-        audioEngine.startMusic();
+      if (!audioEngine.isMusicPlaying) {
+        audioEngine.startMusic(500, gameState.level);
       }
     }
-  }, [gameState.gameOver, gameState.isPaused, isMuted]);
+
+    return () => {
+      audioEngine.stopMusic();
+    };
+  }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, gameState.level]);
 
   const handleWalletPayment = async () => {
     if (!wallet) {
@@ -215,7 +268,7 @@ export function Game() {
         const invoice = await getInvoiceFromLightningAddress({
           lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
           amountSats: GAME_COST_SATS,
-          comment: 'Space Zapper game payment - 21 sats to play!',
+          comment: 'Space Zappers game payment - 21 sats to play!',
         });
 
         await window.webln.sendPayment(invoice);
@@ -224,7 +277,7 @@ export function Game() {
         setShowPayment(false);
         toast({
           title: 'Payment successful! ⚡',
-          description: `Zapped ${GAME_COST_SATS} sats to play Space Zapper`,
+          description: `Zapped ${GAME_COST_SATS} sats to play Space Zappers`,
         });
       } else {
         toast({
@@ -256,7 +309,7 @@ export function Game() {
       const invoice = await getInvoiceFromLightningAddress({
         lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
         amountSats: GAME_COST_SATS,
-        comment: `Space Zapper game - ${paymentId}`,
+        comment: `Space Zappers game - ${paymentId}`,
       });
 
       setLightningInvoice(invoice);
@@ -319,7 +372,7 @@ export function Game() {
     setCurrentPaymentId(null);
     toast({
       title: 'Payment confirmed! 🎮',
-      description: 'Starting Space Zapper...',
+      description: 'Starting Space Zappers...',
     });
   };
 
@@ -333,11 +386,22 @@ export function Game() {
       setIsFreePlay(true);
     }
 
+    // Initialize audio on game start (browsers require user interaction)
+    audioEngine.initialize();
+
     setGameState(createInitialState());
     setHasStarted(true);
+    setHasPublishedScore(false);
+    setHighlightedScore(null);
     previousScoreRef.current = 0;
     previousLevelRef.current = 1;
     previousInvaderCountRef.current = 55;
+    previousLivesRef.current = 3;
+
+    // Show level 1 popup at start
+    setDisplayedLevel(1);
+    setShowLevelPopup(true);
+    setTimeout(() => setShowLevelPopup(false), 2000);
   };
 
   const togglePause = () => {
@@ -357,47 +421,90 @@ export function Game() {
 
   const publishScore = useCallback(() => {
     if (!user) {
-      toast({
-        title: 'Login required',
-        description: 'Please login to publish your score',
-        variant: 'destructive',
-      });
+      setShowLoginToSave(true);
       return;
     }
+
+    const scoreToPublish = gameState.score;
 
     publishEvent({
       kind: GAME_SCORE_KIND,
       content: JSON.stringify({
-        score: gameState.score,
+        score: scoreToPublish,
         level: gameState.level,
         game: 'space-zapper',
       }),
       tags: [
         ['t', 'space-zapper'],
         ['t', 'game'],
-        ['alt', `Space Zapper game score: ${gameState.score} points, level ${gameState.level}`],
+        ['alt', `Space Zappers game score: ${scoreToPublish} points, level ${gameState.level}`],
       ],
     });
 
     toast({
-      title: 'Score published! 🎮',
-      description: `Your score of ${gameState.score} has been shared on Nostr`,
+      title: 'Score saved! 🎮',
+      description: `Your score of ${scoreToPublish.toLocaleString()} has been added to the leaderboard`,
     });
-  }, [user, gameState.score, gameState.level, publishEvent, toast]);
 
-  const shareScore = useCallback(() => {
-    const text = `I just scored ${gameState.score} points on level ${gameState.level} in Space Zapper! ⚡🎮\n\nPlay at: ${window.location.origin}`;
+    // Mark as published so user can't post again
+    setHasPublishedScore(true);
 
-    if (navigator.share) {
-      navigator.share({ text });
-    } else {
-      navigator.clipboard.writeText(text);
+    // Highlight this score and open leaderboard after a short delay to allow event propagation
+    setHighlightedScore(scoreToPublish);
+    setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['game-scores'] });
+      refetchLeaderboard();
+      setShowLeaderboard(true);
+    }, 1000);
+  }, [user, gameState.score, gameState.level, publishEvent, toast, queryClient, refetchLeaderboard]);
+
+  const openShareDialog = useCallback(() => {
+    const funMessages = [
+      `🚀 Just zapped my way to ${gameState.score.toLocaleString()} points in Space Zappers! 👾⚡ Think you can beat that? Come defend Earth!\n\nhttps://www.spacezapper.com`,
+      `👾 INVASION REPELLED! Scored ${gameState.score.toLocaleString()} points on level ${gameState.level}! The aliens didn't stand a chance ⚡🎮\n\nJoin the fight: https://www.spacezapper.com`,
+      `⚡ ${gameState.score.toLocaleString()} points! I'm basically saving the galaxy one zap at a time 🛸 Can you do better?\n\nPlay now: https://www.spacezapper.com`,
+      `🎮 Just dropped ${gameState.score.toLocaleString()} points in Space Zappers! Level ${gameState.level} cleared! Who's next? 👾\n\nhttps://www.spacezapper.com`,
+    ];
+    const randomMessage = funMessages[Math.floor(Math.random() * funMessages.length)];
+    setShareMessage(randomMessage);
+    setShowShareDialog(true);
+  }, [gameState.score, gameState.level]);
+
+  const publishSharePost = useCallback(() => {
+    if (!user) {
       toast({
-        title: 'Score copied!',
-        description: 'Share link copied to clipboard',
+        title: 'Login required',
+        description: 'Please login to share on Nostr',
+        variant: 'destructive',
       });
+      return;
     }
-  }, [gameState.score, gameState.level, toast]);
+
+    publishEvent({
+      kind: 1, // Regular note
+      content: shareMessage,
+      tags: [
+        ['t', 'spacezappers'],
+        ['t', 'gaming'],
+        ['t', 'nostr'],
+        ['r', 'https://www.spacezapper.com'],
+      ],
+    });
+
+    toast({
+      title: 'Posted to Nostr! 🚀',
+      description: 'Your score has been shared with the world',
+    });
+    setShowShareDialog(false);
+  }, [user, shareMessage, publishEvent, toast]);
+
+  const copyShareMessage = useCallback(() => {
+    navigator.clipboard.writeText(shareMessage);
+    toast({
+      title: 'Copied!',
+      description: 'Message copied to clipboard',
+    });
+  }, [shareMessage, toast]);
 
   return (
     <div className="fixed inset-0 bg-black text-green-500 overflow-hidden flex flex-col">
@@ -408,7 +515,7 @@ export function Game() {
       <div className="relative z-10 bg-black border-b-2 border-green-500 px-6 py-3 flex justify-between items-center">
         <div className="flex items-center gap-6">
           <h1 className="text-4xl font-bold tracking-wider text-green-400 drop-shadow-[0_0_10px_rgba(0,255,0,0.8)]">
-            SPACE ZAPPER
+            SPACE ZAPPERS
           </h1>
           <div className="bg-yellow-400 text-black text-sm px-3 py-1 rounded font-bold">
             ⚡ 21 SATS
@@ -416,7 +523,31 @@ export function Game() {
         </div>
 
         <div className="flex items-center gap-4">
-          {!user && <LoginArea className="max-w-48" />}
+          {user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="focus:outline-none">
+                  <Avatar className="h-10 w-10 border-2 border-green-500 cursor-pointer hover:border-green-400 transition-colors">
+                    <AvatarImage src={picture} alt={name || 'User'} />
+                    <AvatarFallback className="bg-green-900 text-green-400">
+                      {(name || user.pubkey.slice(0, 2)).toUpperCase().slice(0, 2)}
+                    </AvatarFallback>
+                  </Avatar>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-gray-900 border-green-500">
+                <DropdownMenuItem
+                  onClick={logout}
+                  className="text-red-400 hover:text-red-300 hover:bg-red-900/20 cursor-pointer text-lg py-3"
+                >
+                  <LogOut className="mr-2 h-5 w-5" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <LoginArea className="max-w-48" />
+          )}
 
           <Button
             variant="outline"
@@ -471,11 +602,7 @@ export function Game() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-green-400">LIVES</span>
-          <div className="flex gap-2">
-            {Array.from({ length: gameState.player.lives }).map((_, i) => (
-              <div key={i} className="text-green-500 text-2xl">▲</div>
-            ))}
-          </div>
+          <TankLives lives={gameState.player.lives} />
         </div>
         <div className="flex items-center gap-4">
           <span className="text-green-400">LEVEL</span>
@@ -486,7 +613,7 @@ export function Game() {
       {/* Game Canvas - Full Screen */}
       <div className="relative z-10 flex-1 flex items-center justify-center bg-black p-8">
         <div className="relative">
-          <GameCanvas gameState={gameState} />
+          <GameCanvas gameState={gameState} playerFlashing={playerFlashing} />
 
           {/* Overlays */}
           {!hasStarted && (
@@ -512,6 +639,20 @@ export function Game() {
                   >
                     TRY FOR FREE
                   </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Level Popup */}
+          {showLevelPopup && hasStarted && !gameState.gameOver && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+              <div className="text-center animate-pulse">
+                <div className="text-8xl text-green-400 font-bold drop-shadow-[0_0_20px_rgba(0,255,0,0.8)]">
+                  LEVEL {displayedLevel}
+                </div>
+                <div className="text-3xl text-yellow-400 mt-4">
+                  GET READY!
                 </div>
               </div>
             </div>
@@ -545,28 +686,30 @@ export function Game() {
                       TRY FREE AGAIN
                     </Button>
                   </div>
-                  {user && !isFreePlay && (
-                    <div className="flex gap-4">
-                      <Button
-                        onClick={publishScore}
-                        variant="outline"
-                        size="lg"
-                        className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg"
-                      >
-                        <Trophy className="mr-2 h-5 w-5" />
-                        PUBLISH SCORE
-                      </Button>
-                      <Button
-                        onClick={shareScore}
-                        variant="outline"
-                        size="lg"
-                        className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg"
-                      >
-                        <Share2 className="mr-2 h-5 w-5" />
-                        SHARE
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex gap-4 justify-center">
+                    <Button
+                      onClick={publishScore}
+                      variant="outline"
+                      size="lg"
+                      disabled={hasPublishedScore}
+                      className={hasPublishedScore
+                        ? "border-green-500 text-green-500 text-lg cursor-not-allowed opacity-70"
+                        : "border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-black text-lg"
+                      }
+                    >
+                      <Trophy className="mr-2 h-5 w-5" />
+                      {hasPublishedScore ? 'SAVED ✓' : 'SAVE TO LEADERBOARD'}
+                    </Button>
+                    <Button
+                      onClick={openShareDialog}
+                      variant="outline"
+                      size="lg"
+                      className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg"
+                    >
+                      <Share2 className="mr-2 h-5 w-5" />
+                      SHARE
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -577,14 +720,17 @@ export function Game() {
       {/* Footer */}
       <div className="relative z-10 bg-black border-t-2 border-green-500 px-6 py-2 text-center text-green-600 text-lg">
         {hasStarted ? (
-          <span>← → or A/D: MOVE | SPACE: SHOOT</span>
+          <span>← → or A/D: MOVE | SPACE: SHOOT | ESC: PAUSE</span>
         ) : (
           <span>VIBED BY NINIMONK05 • POWERED BY LIGHTNING ⚡</span>
         )}
       </div>
 
       {/* Leaderboard Dialog */}
-      <Dialog open={showLeaderboard} onOpenChange={setShowLeaderboard}>
+      <Dialog open={showLeaderboard} onOpenChange={(open) => {
+        setShowLeaderboard(open);
+        if (!open) setHighlightedScore(null);
+      }}>
         <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
           <DialogHeader>
             <DialogTitle className="text-3xl text-green-400 flex items-center gap-2">
@@ -594,37 +740,46 @@ export function Game() {
           </DialogHeader>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {leaderboard && leaderboard.length > 0 ? (
-              leaderboard.map((score, index) => (
-                <div
-                  key={score.event.id}
-                  className={`flex justify-between items-center p-3 rounded text-xl ${
-                    index === 0
-                      ? 'bg-yellow-900/30 border border-yellow-500'
-                      : index === 1
-                      ? 'bg-gray-700/30 border border-gray-400'
-                      : index === 2
-                      ? 'bg-orange-900/30 border border-orange-600'
-                      : 'bg-gray-800/30'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-green-300 font-bold w-8">
-                      #{index + 1}
-                    </span>
-                    <span className="text-white truncate max-w-[180px]">
-                      {score.event.pubkey.slice(0, 12)}...
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-green-400 font-bold">
-                      {score.score.toLocaleString()}
+              leaderboard.map((score, index) => {
+                const isCurrentUser = user && score.event.pubkey === user.pubkey;
+                const isHighlighted = isCurrentUser && highlightedScore === score.score;
+
+                return (
+                  <div
+                    key={score.event.id}
+                    className={`flex justify-between items-center p-3 rounded text-xl transition-all ${
+                      isHighlighted
+                        ? 'bg-orange-500/30 border-2 border-orange-500 animate-pulse'
+                        : isCurrentUser
+                        ? 'bg-orange-900/20 border border-orange-500/50'
+                        : index === 0
+                        ? 'bg-yellow-900/30 border border-yellow-500'
+                        : index === 1
+                        ? 'bg-gray-700/30 border border-gray-400'
+                        : index === 2
+                        ? 'bg-orange-900/30 border border-orange-600'
+                        : 'bg-gray-800/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={`font-bold w-8 ${isHighlighted ? 'text-orange-400' : 'text-green-300'}`}>
+                        #{index + 1}
+                      </span>
+                      <span className={`truncate max-w-[180px] ${isCurrentUser ? 'text-orange-400 font-bold' : 'text-white'}`}>
+                        {isCurrentUser ? (name || 'YOU') : `${score.event.pubkey.slice(0, 8)}...`}
+                      </span>
                     </div>
-                    <div className="text-sm text-green-600">
-                      LEVEL {score.level}
+                    <div className="text-right">
+                      <div className={`font-bold ${isHighlighted ? 'text-orange-400' : 'text-green-400'}`}>
+                        {score.score.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-green-600">
+                        LEVEL {score.level}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="text-center text-green-600 py-12 text-xl">
                 NO SCORES YET. BE THE FIRST!
@@ -834,6 +989,95 @@ export function Game() {
                 </div>
               </>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Login to Save Score Dialog */}
+      <Dialog open={showLoginToSave} onOpenChange={setShowLoginToSave}>
+        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
+          <DialogHeader>
+            <DialogTitle className="text-3xl text-green-400 flex items-center gap-2">
+              <Trophy className="h-8 w-8" />
+              SAVE YOUR SCORE
+            </DialogTitle>
+            <DialogDescription className="text-green-300 text-lg">
+              Login with Nostr to save your score of {gameState.score} to the leaderboard
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="text-center">
+              <div className="text-5xl font-bold text-yellow-400 mb-2">
+                {gameState.score.toLocaleString()}
+              </div>
+              <div className="text-xl text-green-600">
+                LEVEL {gameState.level}
+              </div>
+            </div>
+            <div className="flex flex-col items-center gap-4">
+              <LoginArea className="w-full" />
+              {user && (
+                <Button
+                  onClick={() => {
+                    publishScore();
+                    setShowLoginToSave(false);
+                  }}
+                  className="w-full bg-yellow-500 text-black hover:bg-yellow-400 font-bold text-xl py-6"
+                >
+                  <Trophy className="mr-2 h-6 w-6" />
+                  SAVE TO LEADERBOARD
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share to Nostr Dialog */}
+      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-lg border-4">
+          <DialogHeader>
+            <DialogTitle className="text-3xl text-green-400 flex items-center gap-2">
+              <Share2 className="h-8 w-8" />
+              SHARE YOUR VICTORY
+            </DialogTitle>
+            <DialogDescription className="text-green-300 text-lg">
+              Tell the world about your epic score!
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <textarea
+              value={shareMessage}
+              onChange={(e) => setShareMessage(e.target.value)}
+              className="w-full h-40 bg-black border-2 border-green-500 rounded-lg p-4 text-green-300 text-lg resize-none focus:outline-none focus:border-green-400"
+              placeholder="Write your message..."
+            />
+            <div className="flex gap-3">
+              {user ? (
+                <Button
+                  onClick={publishSharePost}
+                  className="flex-1 bg-purple-600 text-white hover:bg-purple-500 font-bold text-xl py-6"
+                >
+                  <Zap className="mr-2 h-6 w-6" />
+                  POST TO NOSTR
+                </Button>
+              ) : (
+                <div className="flex-1 space-y-3">
+                  <div className="text-center text-yellow-400 text-sm">
+                    Login to post directly to Nostr
+                  </div>
+                  <LoginArea className="w-full" />
+                </div>
+              )}
+              <Button
+                onClick={copyShareMessage}
+                variant="outline"
+                className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-bold text-lg py-6"
+              >
+                <Copy className="mr-2 h-5 w-5" />
+                COPY
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
