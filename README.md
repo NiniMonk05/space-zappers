@@ -4,7 +4,7 @@ A retro Space Invaders arcade game powered by Bitcoin Lightning and Nostr.
 
 Pay 21 sats to play. Publish your high scores to the decentralized leaderboard.
 
-![Space Zappers Gameplay](docs/screenshot.png)
+![Space Zappers Gameplay](docs/screenshot.jpeg)
 
 ## Features
 
