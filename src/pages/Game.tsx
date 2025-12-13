@@ -18,6 +18,7 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useGameScores } from '@/hooks/useGameScores';
 import { useToast } from '@/hooks/useToast';
 import { useWallet } from '@/hooks/useWallet';
+import { useNWC } from '@/hooks/useNWCContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   createInitialState,
@@ -75,6 +76,7 @@ export function Game() {
   const { data: leaderboard, refetch: refetchLeaderboard } = useGameScores(50);
   const { toast } = useToast();
   const wallet = useWallet();
+  const { sendPayment, getActiveConnection } = useNWC();
   const [highlightedScore, setHighlightedScore] = useState<number | null>(null);
   const [hasPublishedScore, setHasPublishedScore] = useState(false);
 
@@ -285,29 +287,47 @@ export function Game() {
     setIsPaymentProcessing(true);
 
     try {
-      // Try to use WebLN if available
+      // Generate invoice via LNbits
+      const invoice = await createLNbitsInvoice(GAME_COST_SATS, 'Space Zappers - 21 sats to play');
+
+      // Try NWC first if available
+      const nwcConnection = getActiveConnection();
+      if (nwcConnection && nwcConnection.isConnected) {
+        try {
+          await sendPayment(nwcConnection, invoice);
+          setHasPaid(true);
+          resetPayment();
+          toast({
+            title: 'Payment successful! ⚡',
+            description: `Paid ${GAME_COST_SATS} sats via NWC to play Space Zappers`,
+          });
+          return;
+        } catch (nwcError) {
+          console.error('NWC payment failed:', nwcError);
+          // Fall through to try WebLN
+        }
+      }
+
+      // Try WebLN if NWC didn't work
       if (typeof window.webln !== 'undefined') {
         await window.webln.enable();
-
-        // Generate invoice via LNbits for WebLN payment
-        const invoice = await createLNbitsInvoice(GAME_COST_SATS, 'Space Zappers - 21 sats to play');
-
         await window.webln.sendPayment(invoice);
 
         setHasPaid(true);
-        setShowPayment(false);
         resetPayment();
         toast({
           title: 'Payment successful! ⚡',
-          description: `Zapped ${GAME_COST_SATS} sats to play Space Zappers`,
+          description: `Paid ${GAME_COST_SATS} sats to play Space Zappers`,
         });
-      } else {
-        toast({
-          title: 'WebLN not available',
-          description: 'Please use the invoice payment option',
-          variant: 'destructive',
-        });
+        return;
       }
+
+      // Neither NWC nor WebLN available
+      toast({
+        title: 'No wallet available',
+        description: 'Please use the invoice payment option or connect a wallet',
+        variant: 'destructive',
+      });
     } catch (error) {
       toast({
         title: 'Payment failed',
