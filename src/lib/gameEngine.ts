@@ -79,7 +79,7 @@ export const PLAYER_SPEED = 5;
 export const BULLET_SPEED = 8;
 export const BASE_BOMB_SPEED = 2; // Base speed for enemy bombs
 export const INITIAL_INVADER_SPEED = 1000; // milliseconds between moves
-export const MIN_INVADER_SPEED = 100; // Faster minimum for end-game tension
+export const MIN_INVADER_SPEED = 35; // Very fast for last few aliens (like original arcade)
 export const UFO_SPAWN_INTERVAL = 15000; // 15 seconds
 export const UFO_SPEED = 2;
 export const UFO_WIDTH = 48;
@@ -358,10 +358,13 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
       newState.invaderDirection = direction;
     }
 
-    // Increase speed as invaders are destroyed
+    // Increase speed as invaders are destroyed (exponential curve like original arcade)
     const aliveCount = newState.invaders.filter((inv) => inv.isAlive).length;
     const totalInvaders = INVADERS_PER_ROW * INVADER_ROWS;
-    const speedMultiplier = Math.max(0.3, aliveCount / totalInvaders);
+    // Exponential curve: speed increases dramatically as fewer aliens remain
+    // At 55 aliens: 1000ms, at 10 aliens: ~180ms, at 1 alien: ~35ms
+    const ratio = aliveCount / totalInvaders;
+    const speedMultiplier = Math.pow(ratio, 1.5); // Exponential curve
     newState.invaderSpeed = Math.max(
       MIN_INVADER_SPEED,
       INITIAL_INVADER_SPEED * speedMultiplier
@@ -408,7 +411,7 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
     if (!newState.bonusUFO && newState.levelTransition) {
       newState.level++;
       newState.invaders = createInvaders(newState.level);
-      newState.shields = createShields(); // Restore shields between levels
+      // Shields persist across levels (like the original arcade game)
       newState.invaderSpeed = INITIAL_INVADER_SPEED; // Reset to base speed each level (like original)
       newState.levelTransition = false;
       newState.nextUFOSpawn = now + UFO_SPAWN_INTERVAL;

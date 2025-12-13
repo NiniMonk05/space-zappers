@@ -98,6 +98,14 @@ export function Game() {
   // Handle keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Space starts game from payment confirmation screen
+      if (e.key === ' ' && showPayment && hasPaid) {
+        e.preventDefault();
+        setShowPayment(false);
+        startGame();
+        return;
+      }
+
       // Any key unpauses the game
       if (hasStarted && gameState.isPaused && !gameState.gameOver) {
         e.preventDefault();
@@ -156,7 +164,7 @@ export function Game() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted]);
+  }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, showPayment, hasPaid]);
 
   // Game loop
   useEffect(() => {
@@ -501,10 +509,10 @@ export function Game() {
 
   const openShareDialog = useCallback(() => {
     const funMessages = [
-      `🚀 Just zapped my way to ${gameState.score.toLocaleString()} points in Space Zappers! 👾⚡ Think you can beat that? Come defend Earth!\n\nhttps://www.spacezapper.com`,
-      `👾 INVASION REPELLED! Scored ${gameState.score.toLocaleString()} points on level ${gameState.level}! The aliens didn't stand a chance ⚡🎮\n\nJoin the fight: https://www.spacezapper.com`,
-      `⚡ ${gameState.score.toLocaleString()} points! I'm basically saving the galaxy one zap at a time 🛸 Can you do better?\n\nPlay now: https://www.spacezapper.com`,
-      `🎮 Just dropped ${gameState.score.toLocaleString()} points in Space Zappers! Level ${gameState.level} cleared! Who's next? 👾\n\nhttps://www.spacezapper.com`,
+      `🚀 Just zapped my way to ${gameState.score.toLocaleString()} points in Space Zappers! 👾⚡ Think you can beat that? Come defend Earth!\n\nhttps://www.spacezappers.com`,
+      `👾 INVASION REPELLED! Scored ${gameState.score.toLocaleString()} points on level ${gameState.level}! The aliens didn't stand a chance ⚡🎮\n\nJoin the fight: https://www.spacezappers.com`,
+      `⚡ ${gameState.score.toLocaleString()} points! I'm basically saving the galaxy one zap at a time 🛸 Can you do better?\n\nPlay now: https://www.spacezappers.com`,
+      `🎮 Just dropped ${gameState.score.toLocaleString()} points in Space Zappers! Level ${gameState.level} cleared! Who's next? 👾\n\nhttps://www.spacezappers.com`,
     ];
     const randomMessage = funMessages[Math.floor(Math.random() * funMessages.length)];
     setShareMessage(randomMessage);
@@ -528,7 +536,7 @@ export function Game() {
         ['t', 'spacezappers'],
         ['t', 'gaming'],
         ['t', 'nostr'],
-        ['r', 'https://www.spacezapper.com'],
+        ['r', 'https://www.spacezappers.com'],
       ],
     });
 
@@ -939,7 +947,7 @@ export function Game() {
                   className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-2xl py-8"
                 >
                   <Play className="mr-2 h-8 w-8" />
-                  PLAY NOW
+                  PLAY NOW (SPACE)
                 </Button>
               </>
             ) : !lightningInvoice ? (
