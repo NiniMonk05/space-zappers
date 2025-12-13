@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle, LogOut } from 'lucide-react';
+import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle, LogOut, Wallet, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameCanvas } from '@/components/GameCanvas';
 import { LoginArea } from '@/components/auth/LoginArea';
+import LoginDialog from '@/components/auth/LoginDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLoginActions } from '@/hooks/useLoginActions';
 import {
@@ -24,17 +25,18 @@ import {
   type GameState,
 } from '@/lib/gameEngine';
 import { audioEngine } from '@/lib/audioEngine';
-import { getInvoiceFromLightningAddress } from '@/lib/lightningInvoice';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { usePaymentConfirmation } from '@/hooks/usePaymentConfirmation';
-import { generatePaymentId } from '@/lib/paymentVerification';
+import { useLNbitsPayment } from '@/hooks/useLNbitsPayment';
 import QRCode from 'qrcode';
 import { TankLives } from '@/components/TankLives';
+import { WalletModal } from '@/components/WalletModal';
 
 const GAME_COST_SATS = 21;
-const RECIPIENT_NPUB = 'npub1sfpeyr9k5jms37q4900mw9q4vze4xwhdxd4avdxjml8rqgjkre8s4lcq9l';
-const RECIPIENT_PUBKEY = '8243920cb6a4b708f8152bdfb7141560b3533aed336bd634d2dfce3022561e4f';
-const RECIPIENT_LIGHTNING_ADDRESS = 'space.zapper@bank.weeksfamily.me';
+const RECIPIENT_LIGHTNING_ADDRESS = 'space.zappers@bank.weeksfamily.me';
+
+// LNbits configuration from environment
+const LNBITS_URL = import.meta.env.VITE_LNBITS_URL || '/lnbits';
+const LNBITS_INVOICE_KEY = import.meta.env.VITE_LNBITS_INVOICE_KEY || '';
 
 export function Game() {
   const [gameState, setGameState] = useState<GameState>(createInitialState());
@@ -49,14 +51,16 @@ export function Game() {
   const [invoiceCopied, setInvoiceCopied] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
-  const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(null);
   const [isFreePlay, setIsFreePlay] = useState(false);
+  const [freePlayTimeLeft, setFreePlayTimeLeft] = useState(60);
+  const freePlayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [showLevelPopup, setShowLevelPopup] = useState(false);
   const [displayedLevel, setDisplayedLevel] = useState(1);
   const [playerFlashing, setPlayerFlashing] = useState(false);
   const [showLoginToSave, setShowLoginToSave] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
+  const [showAddAccountDialog, setShowAddAccountDialog] = useState(false);
   const gameLoopRef = useRef<number>();
   const previousScoreRef = useRef(0);
   const previousLevelRef = useRef(1);
@@ -73,19 +77,21 @@ export function Game() {
   const [highlightedScore, setHighlightedScore] = useState<number | null>(null);
   const [hasPublishedScore, setHasPublishedScore] = useState(false);
 
-  // Listen for payment confirmation via Nostr webhook
-  const { isConfirmed: paymentConfirmed } = usePaymentConfirmation({
-    paymentId: currentPaymentId,
-    onConfirmed: () => {
+  // LNbits payment hook - creates invoices via LNURL and polls for payment
+  const {
+    createInvoice: createLNbitsInvoice,
+    isPaid: paymentConfirmed,
+    isPolling,
+    reset: resetPayment,
+  } = useLNbitsPayment({
+    lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
+    lnbitsUrl: LNBITS_URL,
+    apiKey: LNBITS_INVOICE_KEY,
+    onPaid: () => {
       setHasPaid(true);
-      setShowPayment(false);
+      // Keep dialog open, just clear the invoice/QR
       setLightningInvoice(null);
       setQrCodeDataUrl(null);
-      setCurrentPaymentId(null);
-      toast({
-        title: 'Payment confirmed! ⚡',
-        description: 'Starting Space Zappers...',
-      });
     },
   });
 
@@ -264,17 +270,14 @@ export function Game() {
       if (typeof window.webln !== 'undefined') {
         await window.webln.enable();
 
-        // Generate invoice for WebLN payment
-        const invoice = await getInvoiceFromLightningAddress({
-          lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
-          amountSats: GAME_COST_SATS,
-          comment: 'Space Zappers game payment - 21 sats to play!',
-        });
+        // Generate invoice via LNbits for WebLN payment
+        const invoice = await createLNbitsInvoice(GAME_COST_SATS, 'Space Zappers - 21 sats to play');
 
         await window.webln.sendPayment(invoice);
 
         setHasPaid(true);
         setShowPayment(false);
+        resetPayment();
         toast({
           title: 'Payment successful! ⚡',
           description: `Zapped ${GAME_COST_SATS} sats to play Space Zappers`,
@@ -301,16 +304,8 @@ export function Game() {
     setIsPaymentProcessing(true);
 
     try {
-      // Generate unique payment ID
-      const paymentId = generatePaymentId();
-      setCurrentPaymentId(paymentId);
-
-      // Include payment ID in comment for webhook tracking
-      const invoice = await getInvoiceFromLightningAddress({
-        lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
-        amountSats: GAME_COST_SATS,
-        comment: `Space Zappers game - ${paymentId}`,
-      });
+      // Create invoice via LNbits API (also starts polling for payment)
+      const invoice = await createLNbitsInvoice(GAME_COST_SATS, 'Space Zappers - 21 sats to play');
 
       setLightningInvoice(invoice);
 
@@ -369,7 +364,7 @@ export function Game() {
     setShowPayment(false);
     setLightningInvoice(null);
     setQrCodeDataUrl(null);
-    setCurrentPaymentId(null);
+    resetPayment();
     toast({
       title: 'Payment confirmed! 🎮',
       description: 'Starting Space Zappers...',
@@ -377,17 +372,47 @@ export function Game() {
   };
 
   const startGame = (freeMode = false) => {
-    if (!hasPaid && !freeMode) {
+    // Always require payment for non-free games (unless already paid this session)
+    if (!freeMode && !hasPaid) {
       setShowPayment(true);
       return;
     }
 
     if (freeMode) {
       setIsFreePlay(true);
+      setFreePlayTimeLeft(60);
+      // Start 1-minute countdown timer
+      if (freePlayTimerRef.current) {
+        clearInterval(freePlayTimerRef.current);
+      }
+      freePlayTimerRef.current = setInterval(() => {
+        setFreePlayTimeLeft((prev) => {
+          if (prev <= 1) {
+            // Time's up - end the game
+            if (freePlayTimerRef.current) {
+              clearInterval(freePlayTimerRef.current);
+              freePlayTimerRef.current = null;
+            }
+            audioEngine.stopMusic();
+            audioEngine.stopUfoSound();
+            audioEngine.playGameOver();
+            setGameState((state) => ({ ...state, gameOver: true, player: { ...state.player, isAlive: false } }));
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setIsFreePlay(false);
+      if (freePlayTimerRef.current) {
+        clearInterval(freePlayTimerRef.current);
+        freePlayTimerRef.current = null;
+      }
     }
 
     // Initialize audio on game start (browsers require user interaction)
     audioEngine.initialize();
+    audioEngine.stopUfoSound(); // Stop any lingering UFO sound from previous game
 
     setGameState(createInitialState());
     setHasStarted(true);
@@ -414,7 +439,8 @@ export function Game() {
 
     if (muted) {
       audioEngine.stopMusic();
-    } else {
+    } else if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
+      // Only start music if game is actively playing
       audioEngine.startMusic();
     }
   };
@@ -536,6 +562,22 @@ export function Game() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="bg-gray-900 border-green-500">
+                <WalletModal>
+                  <DropdownMenuItem
+                    onSelect={(e) => e.preventDefault()}
+                    className="text-green-400 hover:text-green-300 hover:bg-green-900/20 cursor-pointer text-lg py-3"
+                  >
+                    <Wallet className="mr-2 h-5 w-5" />
+                    Wallet Settings
+                  </DropdownMenuItem>
+                </WalletModal>
+                <DropdownMenuItem
+                  onClick={() => setShowAddAccountDialog(true)}
+                  className="text-green-400 hover:text-green-300 hover:bg-green-900/20 cursor-pointer text-lg py-3"
+                >
+                  <UserPlus className="mr-2 h-5 w-5" />
+                  Add Account
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={logout}
                   className="text-red-400 hover:text-red-300 hover:bg-red-900/20 cursor-pointer text-lg py-3"
@@ -596,8 +638,10 @@ export function Game() {
         <div className="flex items-center gap-4">
           <span className="text-green-400">SCORE</span>
           <span className="text-white font-bold">{gameState.score.toString().padStart(6, '0')}</span>
-          {isFreePlay && hasStarted && (
-            <span className="text-yellow-400 text-sm animate-pulse">FREE PLAY</span>
+          {isFreePlay && hasStarted && !gameState.gameOver && (
+            <span className="text-yellow-400 text-sm animate-pulse">
+              FREE PLAY - {freePlayTimeLeft}s
+            </span>
           )}
         </div>
         <div className="flex items-center gap-4">
@@ -619,7 +663,7 @@ export function Game() {
           {!hasStarted && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80">
               <div className="text-center space-y-6">
-                <div className="text-6xl text-green-400 animate-pulse font-bold">
+                <div className="text-6xl animate-pulse font-bold" style={{ color: '#f7931a' }}>
                   INSERT BITCOIN
                 </div>
                 <div className="space-y-3">
@@ -637,7 +681,7 @@ export function Game() {
                     size="sm"
                     className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-sm px-6 py-3 w-full"
                   >
-                    TRY FOR FREE
+                    TRY FREE (1-MIN LIMIT)
                   </Button>
                 </div>
               </div>
@@ -653,6 +697,20 @@ export function Game() {
                 </div>
                 <div className="text-3xl text-yellow-400 mt-4">
                   GET READY!
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pause Overlay */}
+          {gameState.isPaused && hasStarted && !gameState.gameOver && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
+              <div className="text-center space-y-6">
+                <div className="text-7xl text-yellow-400 font-bold animate-pulse">
+                  PAUSED
+                </div>
+                <div className="text-2xl text-green-400">
+                  PRESS ANY KEY TO CONTINUE
                 </div>
               </div>
             </div>
@@ -683,7 +741,7 @@ export function Game() {
                       size="lg"
                       className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg px-8 py-6"
                     >
-                      TRY FREE AGAIN
+                      TRY FREE (1-MIN)
                     </Button>
                   </div>
                   <div className="flex gap-4 justify-center">
@@ -842,13 +900,34 @@ export function Game() {
       }}>
         <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
           <DialogHeader>
-            <DialogTitle className="text-3xl text-green-400">INSERT COIN</DialogTitle>
+            <DialogTitle className="text-3xl" style={{ color: '#f7931a' }}>INSERT BITCOIN</DialogTitle>
             <DialogDescription className="text-green-300 text-lg">
               SEND 21 SATS VIA LIGHTNING TO PLAY
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {!lightningInvoice ? (
+            {hasPaid ? (
+              <>
+                <div className="text-center py-6">
+                  <div className="text-7xl mb-4 font-mono text-green-400">[OK]</div>
+                  <div className="text-4xl font-bold text-green-400">PAYMENT RECEIVED!</div>
+                  <div className="text-xl text-green-300 mt-4">
+                    21 SATS CONFIRMED
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setShowPayment(false);
+                    startGame();
+                  }}
+                  className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-2xl py-8"
+                >
+                  <Play className="mr-2 h-8 w-8" />
+                  PLAY NOW
+                </Button>
+              </>
+            ) : !lightningInvoice ? (
               <>
                 <div className="text-center py-6">
                   <div className="text-7xl mb-4">⚡</div>
@@ -932,7 +1011,7 @@ export function Game() {
                           ⏳ WAITING FOR PAYMENT...
                         </div>
                         <div className="text-xs text-yellow-600 mt-1">
-                          Payment will be detected automatically via webhook
+                          {isPolling ? 'Payment will be detected automatically' : 'Checking payment status...'}
                         </div>
                       </div>
 
@@ -961,18 +1040,6 @@ export function Game() {
                           COPY INVOICE
                         </>
                       )}
-                    </Button>
-                  </div>
-
-                  <div className="pt-4 border-t border-green-700">
-                    <div className="text-sm text-green-600 mb-3">
-                      AFTER PAYING, CLICK BELOW TO START
-                    </div>
-                    <Button
-                      onClick={confirmPayment}
-                      className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-xl py-6"
-                    >
-                      I PAID - START GAME
                     </Button>
                   </div>
 
@@ -1081,6 +1148,13 @@ export function Game() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Add Account Dialog */}
+      <LoginDialog
+        isOpen={showAddAccountDialog}
+        onClose={() => setShowAddAccountDialog(false)}
+        onLogin={() => setShowAddAccountDialog(false)}
+      />
     </div>
   );
 }
