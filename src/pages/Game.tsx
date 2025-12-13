@@ -79,6 +79,7 @@ export function Game() {
   const { sendPayment, getActiveConnection } = useNWC();
   const [highlightedScore, setHighlightedScore] = useState<number | null>(null);
   const [hasPublishedScore, setHasPublishedScore] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   // LNbits payment hook - creates invoices via LNURL and polls for payment
   const {
@@ -483,6 +484,9 @@ export function Game() {
       return;
     }
 
+    if (isPublishing || hasPublishedScore) return;
+
+    setIsPublishing(true);
     const scoreToPublish = gameState.score;
 
     try {
@@ -523,8 +527,10 @@ export function Game() {
         description: err instanceof Error ? err.message : 'Please try again',
         variant: 'destructive',
       });
+    } finally {
+      setIsPublishing(false);
     }
-  }, [user, gameState.score, gameState.level, toast, queryClient, refetchLeaderboard]);
+  }, [user, gameState.score, gameState.level, toast, queryClient, refetchLeaderboard, isPublishing, hasPublishedScore]);
 
   const openShareDialog = useCallback(() => {
     const funMessages = [
@@ -807,14 +813,16 @@ export function Game() {
                       onClick={publishScore}
                       variant="outline"
                       size="lg"
-                      disabled={hasPublishedScore}
+                      disabled={isPublishing || hasPublishedScore}
                       className={hasPublishedScore
                         ? "border-green-500 text-green-500 text-lg cursor-not-allowed opacity-70"
+                        : isPublishing
+                        ? "border-yellow-500 text-yellow-500 text-lg cursor-not-allowed opacity-70"
                         : "border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-black text-lg"
                       }
                     >
                       <Trophy className="mr-2 h-5 w-5" />
-                      {hasPublishedScore ? 'SAVED ✓' : 'SAVE TO LEADERBOARD'}
+                      {hasPublishedScore ? 'SAVED ✓' : isPublishing ? 'SAVING...' : 'SAVE TO LEADERBOARD'}
                     </Button>
                     <Button
                       onClick={openShareDialog}
@@ -861,14 +869,20 @@ export function Game() {
                 const isHighlighted = isCurrentUser && highlightedScore === score.score;
 
                 return (
-                  <LeaderboardEntry
+                  <div
                     key={score.event.id}
-                    score={score}
-                    index={index}
-                    isCurrentUser={!!isCurrentUser}
-                    isHighlighted={!!isHighlighted}
-                    currentUserName={name}
-                  />
+                    ref={isHighlighted ? (el) => {
+                      if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                    } : undefined}
+                  >
+                    <LeaderboardEntry
+                      score={score}
+                      index={index}
+                      isCurrentUser={!!isCurrentUser}
+                      isHighlighted={!!isHighlighted}
+                      currentUserName={name}
+                    />
+                  </div>
                 );
               })
             ) : (
@@ -1126,10 +1140,15 @@ export function Game() {
                     publishScore();
                     setShowLoginToSave(false);
                   }}
-                  className="w-full bg-yellow-500 text-black hover:bg-yellow-400 font-bold text-xl py-6"
+                  disabled={isPublishing || hasPublishedScore}
+                  className={`w-full font-bold text-xl py-6 ${
+                    isPublishing || hasPublishedScore
+                      ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                      : 'bg-yellow-500 text-black hover:bg-yellow-400'
+                  }`}
                 >
                   <Trophy className="mr-2 h-6 w-6" />
-                  SAVE TO LEADERBOARD
+                  {hasPublishedScore ? 'SAVED ✓' : isPublishing ? 'SAVING...' : 'SAVE TO LEADERBOARD'}
                 </Button>
               )}
             </div>
