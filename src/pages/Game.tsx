@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
-import { useGameScores, GAME_SCORE_KIND } from '@/hooks/useGameScores';
+import { useGameScores } from '@/hooks/useGameScores';
 import { useToast } from '@/hooks/useToast';
 import { useWallet } from '@/hooks/useWallet';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -468,7 +468,7 @@ export function Game() {
     }
   };
 
-  const publishScore = useCallback(() => {
+  const publishScore = useCallback(async () => {
     if (!user) {
       setShowLoginToSave(true);
       return;
@@ -476,36 +476,46 @@ export function Game() {
 
     const scoreToPublish = gameState.score;
 
-    publishEvent({
-      kind: GAME_SCORE_KIND,
-      content: JSON.stringify({
-        score: scoreToPublish,
-        level: gameState.level,
-        game: 'space-zapper',
-      }),
-      tags: [
-        ['t', 'space-zapper'],
-        ['t', 'game'],
-        ['alt', `Space Zappers game score: ${scoreToPublish} points, level ${gameState.level}`],
-      ],
-    });
+    try {
+      // Call score service API to publish via Gamestr (kind 30762)
+      const response = await fetch('/api/publish-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerPubkey: user.pubkey,
+          score: scoreToPublish,
+          level: gameState.level,
+        }),
+      });
 
-    toast({
-      title: 'Score saved! 🎮',
-      description: `Your score of ${scoreToPublish.toLocaleString()} has been added to the leaderboard`,
-    });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to publish score');
+      }
 
-    // Mark as published so user can't post again
-    setHasPublishedScore(true);
+      toast({
+        title: 'Score saved! 🎮',
+        description: `Your score of ${scoreToPublish.toLocaleString()} has been added to the leaderboard`,
+      });
 
-    // Highlight this score and open leaderboard after a short delay to allow event propagation
-    setHighlightedScore(scoreToPublish);
-    setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ['game-scores'] });
-      refetchLeaderboard();
-      setShowLeaderboard(true);
-    }, 1000);
-  }, [user, gameState.score, gameState.level, publishEvent, toast, queryClient, refetchLeaderboard]);
+      // Mark as published so user can't post again
+      setHasPublishedScore(true);
+
+      // Highlight this score and open leaderboard after a short delay
+      setHighlightedScore(scoreToPublish);
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['game-scores'] });
+        refetchLeaderboard();
+        setShowLeaderboard(true);
+      }, 1000);
+    } catch (err) {
+      toast({
+        title: 'Failed to save score',
+        description: err instanceof Error ? err.message : 'Please try again',
+        variant: 'destructive',
+      });
+    }
+  }, [user, gameState.score, gameState.level, toast, queryClient, refetchLeaderboard]);
 
   const openShareDialog = useCallback(() => {
     const funMessages = [
@@ -732,9 +742,25 @@ export function Game() {
                 <div className="text-7xl text-yellow-400 font-bold animate-pulse">
                   PAUSED
                 </div>
-                <div className="text-2xl text-green-400">
+                <div className="text-2xl text-green-400 mb-4">
                   PRESS ANY KEY TO CONTINUE
                 </div>
+                <Button
+                  onClick={() => {
+                    audioEngine.stopMusic();
+                    audioEngine.stopUfoSound();
+                    setHasStarted(false);
+                    setGameState(createInitialState());
+                    if (freePlayTimerRef.current) {
+                      clearInterval(freePlayTimerRef.current);
+                      freePlayTimerRef.current = null;
+                    }
+                  }}
+                  variant="outline"
+                  className="border-red-500 text-red-500 hover:bg-red-500 hover:text-black text-lg px-8 py-4"
+                >
+                  QUIT GAME
+                </Button>
               </div>
             </div>
           )}
@@ -907,6 +933,10 @@ export function Game() {
             <div className="flex items-start gap-3">
               <span className="text-yellow-400">🚀</span>
               <span>PRESS SPACE TO SHOOT</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-400">⏸️</span>
+              <span>PRESS ESC TO PAUSE / QUIT</span>
             </div>
           </div>
         </DialogContent>

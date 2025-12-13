@@ -2,30 +2,51 @@ import { useQuery } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent } from '@nostrify/nostrify';
 
-export const GAME_SCORE_KIND = 8549;
+// Gamestr kind for game scores (addressable replaceable)
+export const GAME_SCORE_KIND = 30762;
+const GAME_ID = 'space-zappers';
 
 export interface GameScore {
-  pubkey: string;
+  pubkey: string; // Player's pubkey (from p tag)
   score: number;
   level: number;
   timestamp: number;
   event: NostrEvent;
 }
 
+// Helper to get tag value
+function getTagValue(event: NostrEvent, tagName: string): string | undefined {
+  const tag = event.tags.find(t => t[0] === tagName);
+  return tag?.[1];
+}
+
 function validateGameScore(event: NostrEvent): boolean {
   if (event.kind !== GAME_SCORE_KIND) return false;
 
-  try {
-    const content = JSON.parse(event.content);
-    return (
-      typeof content.score === 'number' &&
-      typeof content.level === 'number' &&
-      content.score >= 0 &&
-      content.level >= 1
-    );
-  } catch {
-    return false;
-  }
+  const game = getTagValue(event, 'game');
+  const score = getTagValue(event, 'score');
+  const playerPubkey = getTagValue(event, 'p');
+
+  return (
+    game === GAME_ID &&
+    score !== undefined &&
+    !isNaN(parseInt(score, 10)) &&
+    playerPubkey !== undefined
+  );
+}
+
+function parseGameScore(event: NostrEvent): GameScore {
+  const playerPubkey = getTagValue(event, 'p') || event.pubkey;
+  const score = parseInt(getTagValue(event, 'score') || '0', 10);
+  const level = parseInt(getTagValue(event, 'level') || '1', 10);
+
+  return {
+    pubkey: playerPubkey,
+    score,
+    level,
+    timestamp: event.created_at,
+    event,
+  };
 }
 
 export function useGameScores(limit = 50) {
@@ -34,27 +55,19 @@ export function useGameScores(limit = 50) {
   return useQuery({
     queryKey: ['game-scores', limit],
     queryFn: async (c) => {
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(3000)]);
+      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
       const events = await nostr.query(
-        [{ kinds: [GAME_SCORE_KIND], limit }],
+        [{ kinds: [GAME_SCORE_KIND], '#game': [GAME_ID], limit: limit * 2 }],
         { signal }
       );
 
       const validEvents = events.filter(validateGameScore);
+      const scores = validEvents.map(parseGameScore);
 
-      const scores: GameScore[] = validEvents.map((event) => {
-        const content = JSON.parse(event.content);
-        return {
-          pubkey: event.pubkey,
-          score: content.score,
-          level: content.level,
-          timestamp: event.created_at,
-          event,
-        };
-      });
-
-      // Sort by score descending
-      return scores.sort((a, b) => b.score - a.score);
+      // Sort by score descending and take top N
+      return scores
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
     },
   });
 }
@@ -67,9 +80,9 @@ export function useUserBestScore(pubkey?: string) {
     queryFn: async (c) => {
       if (!pubkey) return null;
 
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(3000)]);
+      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
       const events = await nostr.query(
-        [{ kinds: [GAME_SCORE_KIND], authors: [pubkey], limit: 100 }],
+        [{ kinds: [GAME_SCORE_KIND], '#game': [GAME_ID], '#p': [pubkey], limit: 100 }],
         { signal }
       );
 
@@ -77,16 +90,7 @@ export function useUserBestScore(pubkey?: string) {
 
       if (validEvents.length === 0) return null;
 
-      const scores: GameScore[] = validEvents.map((event) => {
-        const content = JSON.parse(event.content);
-        return {
-          pubkey: event.pubkey,
-          score: content.score,
-          level: content.level,
-          timestamp: event.created_at,
-          event,
-        };
-      });
+      const scores = validEvents.map(parseGameScore);
 
       // Return the highest score
       return scores.reduce((best, current) =>

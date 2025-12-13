@@ -27,7 +27,7 @@ export function GameCanvas({ gameState, playerFlashing = false }: GameCanvasProp
     // Draw shields (flat bottom, solid, symmetrical)
     for (const shield of gameState.shields) {
       if (shield.isAlive) {
-        drawShield(ctx, shield.x, shield.y, shield.width, shield.height, shield.health, shield.damageMap);
+        drawShield(ctx, shield.x, shield.y, shield.width, shield.height, shield.damageMap);
       }
     }
 
@@ -269,14 +269,13 @@ function drawUFO(ctx: CanvasRenderingContext2D, x: number, y: number, points: nu
   ctx.fillText(`${points}`, x + 24, y - 10);
 }
 
-// Draw shield - flat bottom, solid, symmetrical (no fading, just pixel damage)
+// Draw shield - flat bottom, solid, symmetrical (pixel damage only)
 function drawShield(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   width: number,
   height: number,
-  _health: number,
   damageMap: boolean[][]
 ) {
   ctx.fillStyle = '#00ff00'; // Solid green, no fading

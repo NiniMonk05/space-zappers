@@ -39,7 +39,7 @@ function extractPaymentHash(bolt11: string): string | null {
     const decoded = decode(bolt11);
     const paymentHashSection = decoded.sections.find(
       (s: { name: string }) => s.name === 'payment_hash'
-    );
+    ) as { name: string; value: string } | undefined;
     return paymentHashSection?.value || null;
   } catch {
     return null;

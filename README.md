@@ -61,22 +61,53 @@ See [WEBHOOK.md](./WEBHOOK.md) for webhook setup instructions.
 
 ## Nostr Integration
 
-### Custom Event Kinds
+Space Zappers uses the [Gamestr](https://gamestr.io) protocol for decentralized leaderboards.
+
+### Event Kinds
 
 | Kind | Purpose |
 |------|---------|
-| 8549 | Game scores (score, level, game identifier) |
-| 8550 | Payment confirmations |
+| 30762 | Game scores ([Gamestr spec](https://gamestr.io/developers)) |
+
+### Architecture
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Game Client   │────▶│  Score Service   │────▶│  Nostr Relays   │
+│   (Browser)     │     │  (signs scores)  │     │                 │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+        │                       │
+        │                       │ GAME_NSEC (private)
+        ▼                       ▼
+   Player pubkey          Game pubkey signs
+   identifies user        score events
+```
+
+The score service holds the game's private key (nsec) and signs score events on behalf of players. This prevents score spoofing since only the game can publish valid scores.
 
 ### Querying Scores
 
 ```javascript
 const scores = await nostr.query([
-  { kinds: [8549], '#t': ['space-zapper'], limit: 100 }
+  { kinds: [30762], '#game': ['space-zappers'], limit: 100 }
 ]);
 ```
 
 See [NIP.md](./NIP.md) for full event specifications.
+
+## Deployment
+
+Single container runs both the game (Nginx) and score signing service (Node.js):
+
+```bash
+docker build -t space-zappers .
+docker run -d --name space-zappers \
+  -p 3001:80 \
+  -e GAME_NSEC=nsec1your_game_nsec_here \
+  space-zappers
+```
+
+The `GAME_NSEC` environment variable is your game's Nostr private key for signing scores.
 
 ## Configuration
 
@@ -85,22 +116,28 @@ The game sends payments to a configured Lightning address. To use your own:
 1. Edit `src/pages/Game.tsx`
 2. Update `RECIPIENT_LIGHTNING_ADDRESS`
 3. Set up LNbits webhook (see WEBHOOK.md)
+4. Configure `VITE_SCORE_SERVICE_URL` to point to your score service
 
 ## Project Structure
 
 ```
-src/
-├── pages/Game.tsx           # Main game page
-├── components/
-│   ├── GameCanvas.tsx       # Canvas rendering
-│   └── ui/                  # shadcn/ui components
-├── lib/
-│   ├── gameEngine.ts        # Game logic
-│   ├── audioEngine.ts       # Sound system
-│   └── lightningInvoice.ts  # Invoice generation
-└── hooks/
-    ├── useGameScores.ts     # Leaderboard queries
-    └── usePaymentConfirmation.ts  # Payment detection
+├── src/
+│   ├── pages/Game.tsx           # Main game page
+│   ├── components/
+│   │   ├── GameCanvas.tsx       # Canvas rendering
+│   │   └── ui/                  # shadcn/ui components
+│   ├── lib/
+│   │   ├── gameEngine.ts        # Game logic
+│   │   ├── audioEngine.ts       # Sound system
+│   │   └── lightningInvoice.ts  # Invoice generation
+│   └── hooks/
+│       ├── useGameScores.ts     # Leaderboard queries
+│       └── usePaymentConfirmation.ts  # Payment detection
+│
+└── score-service/               # Score signing microservice
+    ├── index.js                 # API server (kind 30762)
+    ├── Dockerfile               # Container build
+    └── package.json
 ```
 
 ## Credits

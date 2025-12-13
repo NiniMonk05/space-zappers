@@ -97,7 +97,8 @@ export function NostrSync() {
 
           // Merge NIP-05 relays with existing relays (NIP-05 relays added if not already present)
           updateConfig((current) => {
-            const existingUrls = new Set(current.relayMetadata.relays.map(r => r.url));
+            const existingRelays = current.relayMetadata?.relays ?? [];
+            const existingUrls = new Set(existingRelays.map(r => r.url));
             const newRelays = nip05Relays
               .filter((url: string) => !existingUrls.has(url))
               .map((url: string) => ({ url, read: true, write: true }));
@@ -108,7 +109,8 @@ export function NostrSync() {
                 ...current,
                 relayMetadata: {
                   ...current.relayMetadata,
-                  relays: [...current.relayMetadata.relays, ...newRelays],
+                  relays: [...existingRelays, ...newRelays],
+                  updatedAt: current.relayMetadata?.updatedAt ?? Date.now(),
                 },
               };
             }
