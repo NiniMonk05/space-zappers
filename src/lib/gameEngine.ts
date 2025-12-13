@@ -27,8 +27,7 @@ export interface Bullet extends GameObject {
 }
 
 export interface Shield extends GameObject {
-  health: number;
-  damageMap: boolean[][]; // Track which pixels are damaged
+  damageMap: boolean[][]; // Track which pixels are destroyed
 }
 
 export interface BonusUFO extends GameObject {
@@ -205,7 +204,6 @@ function createShields(): Shield[] {
       width: SHIELD_WIDTH,
       height: SHIELD_HEIGHT,
       isAlive: true,
-      health: 100,
       damageMap: createDamageMap(),
     });
   }
@@ -311,17 +309,10 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
 
   // Check bullet collisions with shields (both player and enemy bullets damage shields!)
   newState.bullets = newState.bullets.filter((bullet) => {
-    for (let i = 0; i < newState.shields.length; i++) {
-      const shield = newState.shields[i];
-      if (!shield.isAlive) continue;
-
+    for (const shield of newState.shields) {
       // Check if bullet hits the shield's actual shape (not just bounding box)
       if (checkShieldCollision(bullet, shield)) {
-        damageShield(newState.shields[i], bullet);
-
-        if (newState.shields[i].health <= 0) {
-          newState.shields[i].isAlive = false;
-        }
+        damageShield(shield, bullet);
         return false;
       }
     }
@@ -415,6 +406,19 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
       newState.invaderSpeed = INITIAL_INVADER_SPEED; // Reset to base speed each level (like original)
       newState.levelTransition = false;
       newState.nextUFOSpawn = now + UFO_SPAWN_INTERVAL;
+    }
+  }
+
+  // Check if invaders touch shields - destroy shield sections they overlap
+  for (const invader of newState.invaders) {
+    if (!invader.isAlive) continue;
+
+    for (const shield of newState.shields) {
+      // Check if invader overlaps with shield bounding box
+      if (checkCollision(invader, shield)) {
+        // Destroy the shield pixels that the invader touches
+        destroyShieldSection(shield, invader);
+      }
     }
   }
 
@@ -562,26 +566,37 @@ function checkShieldCollision(bullet: Bullet, shield: Shield): boolean {
 }
 
 function damageShield(shield: Shield, bullet: Bullet): void {
-  // Calculate damage based on bullet impact
-  const damage = bullet.direction === 'down' ? 8 : 6;
-  shield.health -= damage;
-
   // Mark damage on the shield's damage map at impact point
   const relativeX = Math.floor((bullet.x + BULLET_WIDTH / 2 - shield.x) / (shield.width / 20));
   const relativeY = bullet.direction === 'down'
     ? Math.floor((bullet.y - shield.y) / (shield.height / 15))
     : Math.floor((bullet.y + BULLET_HEIGHT - shield.y) / (shield.height / 15));
 
-  // Damage a larger area around the impact point (3x3 for bigger visible damage)
-  for (let dy = -2; dy <= 2; dy++) {
-    for (let dx = -2; dx <= 2; dx++) {
-      // Skip corners for a more circular damage pattern
-      if (Math.abs(dx) === 2 && Math.abs(dy) === 2) continue;
-
+  // Damage a small area around the impact point (like original arcade)
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
       const mapX = Math.max(0, Math.min(19, relativeX + dx));
       const mapY = Math.max(0, Math.min(14, relativeY + dy));
       if (shield.damageMap[mapY]) {
         shield.damageMap[mapY][mapX] = true;
+      }
+    }
+  }
+}
+
+// Destroy shield pixels that an invader overlaps (when invaders descend to shield level)
+function destroyShieldSection(shield: Shield, invader: Invader): void {
+  // Calculate the grid coordinates that the invader overlaps
+  const startX = Math.floor((invader.x - shield.x) / (shield.width / 20));
+  const endX = Math.floor((invader.x + invader.width - shield.x) / (shield.width / 20));
+  const startY = Math.floor((invader.y - shield.y) / (shield.height / 15));
+  const endY = Math.floor((invader.y + invader.height - shield.y) / (shield.height / 15));
+
+  // Destroy all shield pixels the invader touches
+  for (let y = Math.max(0, startY); y <= Math.min(14, endY); y++) {
+    for (let x = Math.max(0, startX); x <= Math.min(19, endX); x++) {
+      if (shield.damageMap[y]) {
+        shield.damageMap[y][x] = true;
       }
     }
   }
