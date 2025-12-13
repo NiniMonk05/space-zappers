@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNostr } from '@nostrify/react';
+import type { NostrEvent } from '@nostrify/nostrify';
 import { validatePaymentConfirmation, PAYMENT_CONFIRMATION_KIND } from '@/lib/paymentVerification';
 
 interface PaymentConfirmationOptions {
@@ -13,7 +14,7 @@ interface PaymentConfirmationOptions {
  */
 export function usePaymentConfirmation({ paymentId, onConfirmed }: PaymentConfirmationOptions) {
   const [isConfirmed, setIsConfirmed] = useState(false);
-  const [confirmationEvent, setConfirmationEvent] = useState<any>(null);
+  const [confirmationEvent, setConfirmationEvent] = useState<NostrEvent | null>(null);
   const { nostr } = useNostr();
   const abortControllerRef = useRef<AbortController | null>(null);
 

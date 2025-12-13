@@ -3,6 +3,13 @@
  * Creates retro arcade sounds using Web Audio API
  */
 
+// Safari compatibility
+declare global {
+  interface Window {
+    webkitAudioContext: typeof AudioContext;
+  }
+}
+
 class AudioEngine {
   private context: AudioContext | null = null;
   private musicInterval: number | null = null;
@@ -16,7 +23,7 @@ class AudioEngine {
 
   initialize() {
     if (!this.context) {
-      this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      this.context = new (window.AudioContext || window.webkitAudioContext)();
       console.log('[Audio] AudioContext initialized');
     }
   }

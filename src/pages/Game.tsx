@@ -389,25 +389,13 @@ export function Game() {
       setTimeout(() => {
         setInvoiceCopied(false);
       }, 2000);
-    } catch (error) {
+    } catch {
       toast({
         title: 'Failed to copy',
         description: 'Please try again',
         variant: 'destructive',
       });
     }
-  };
-
-  const confirmPayment = () => {
-    setHasPaid(true);
-    setShowPayment(false);
-    setLightningInvoice(null);
-    setQrCodeDataUrl(null);
-    resetPayment();
-    toast({
-      title: 'Payment confirmed! 🎮',
-      description: 'Starting Space Zappers...',
-    });
   };
 
   const startGame = (freeMode = false) => {
