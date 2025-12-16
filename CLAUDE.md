@@ -131,6 +131,7 @@ if (!user) return <LoginArea />;
 - Always read AGENTS.md for detailed Nostr integration patterns
 - Check NIP.md for custom event kind specifications
 - See WEBHOOK.md for LNbits webhook setup documentation
+- See [docs/TROUBLESHOOTING.adoc](./docs/TROUBLESHOOTING.adoc) for known issues and solutions
 - Game costs 21 sats to play (free mode available for testing)
 - Scores only publishable for paid games
 - Do not deploy to the docker container before we confirm it's working locally

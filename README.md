@@ -59,6 +59,8 @@ npm run deploy
 
 See [WEBHOOK.md](./WEBHOOK.md) for webhook setup instructions.
 
+See [TROUBLESHOOTING.adoc](./docs/TROUBLESHOOTING.adoc) for known issues and solutions.
+
 ### Wallet Connection (NWC)
 
 Players can connect a Lightning wallet via [Nostr Wallet Connect (NWC)](https://nwc.dev) for one-click payments. The connection is stored in localStorage and persists across browser sessions until manually disconnected.
