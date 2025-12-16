@@ -69,6 +69,7 @@ export function Game() {
   const previousLevelRef = useRef(1);
   const previousInvaderCountRef = useRef(55);
   const previousLivesRef = useRef(3);
+  const isPausedRef = useRef(false);
 
   const { user, picture, name } = useCurrentUser();
   const { logout } = useLoginActions();
@@ -271,6 +272,11 @@ export function Game() {
     };
   }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, gameState.level]);
 
+  // Keep isPausedRef in sync for the free play timer
+  useEffect(() => {
+    isPausedRef.current = gameState.isPaused;
+  }, [gameState.isPaused]);
+
   const handleWalletPayment = async () => {
     if (!wallet) {
       toast({
@@ -415,6 +421,7 @@ export function Game() {
         clearInterval(freePlayTimerRef.current);
       }
       freePlayTimerRef.current = setInterval(() => {
+        if (isPausedRef.current) return; // Skip countdown when paused
         setFreePlayTimeLeft((prev) => {
           if (prev <= 1) {
             // Time's up - end the game
