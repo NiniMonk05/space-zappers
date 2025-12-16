@@ -976,7 +976,9 @@ export function Game() {
       <Dialog open={showLeaderboard} onOpenChange={(open) => {
         setShowLeaderboard(open);
         if (open) {
-          refetchLeaderboard(); // Fetch fresh scores when opening
+          // Invalidate cache and refetch - ensures fresh data after relay reconnect
+          queryClient.invalidateQueries({ queryKey: ['game-scores'] });
+          refetchLeaderboard();
           // Pause game when opening dialog
           if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
             setGameState((state) => ({ ...state, isPaused: true }));
@@ -986,7 +988,7 @@ export function Game() {
         }
         if (!open) setHighlightedScore(null);
       }}>
-        <DialogContent className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] p-3' : 'max-w-md'}`}>
+        <DialogContent aria-describedby={undefined} className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] p-3' : 'max-w-md'}`}>
           <DialogHeader>
             <DialogTitle className={`text-green-400 flex items-center gap-2 ${isMobile ? 'text-xl' : 'text-3xl'}`}>
               <Trophy className={isMobile ? 'h-5 w-5' : 'h-8 w-8'} />
@@ -1035,7 +1037,7 @@ export function Game() {
           audioEngine.stopUfoSound();
         }
       }}>
-        <DialogContent className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] overflow-y-auto p-3' : 'max-w-md'}`}>
+        <DialogContent aria-describedby={undefined} className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] overflow-y-auto p-3' : 'max-w-md'}`}>
           <DialogHeader>
             <DialogTitle className={`text-green-400 flex items-center gap-2 ${isMobile ? 'text-xl' : 'text-3xl'}`}>
               <HelpCircle className={isMobile ? 'h-5 w-5' : 'h-8 w-8'} />
@@ -1214,7 +1216,7 @@ export function Game() {
 
                         <div className={`bg-black rounded border border-green-700 ${isMobile ? 'p-1' : 'p-3'}`}>
                           <div className={`text-green-500 break-all ${isMobile ? 'text-[8px]' : 'text-xs'}`}>
-                            {lightningInvoice.slice(0, isMobile ? 30 : 60)}...
+                            {lightningInvoice.slice(0, isMobile ? 80 : 60)}...
                           </div>
                         </div>
                       </>
