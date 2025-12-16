@@ -1174,80 +1174,82 @@ export function Game() {
               </>
             ) : (
               <>
-                <div className={`text-center ${isMobile ? 'space-y-2' : 'space-y-4'}`}>
+                <div className={isMobile ? 'flex gap-3' : 'text-center space-y-4'}>
+                  {/* QR Code - left side on mobile */}
                   {qrCodeDataUrl && (
-                    <div className="flex justify-center">
+                    <div className={isMobile ? 'flex-shrink-0' : 'flex justify-center'}>
                       <img
                         src={qrCodeDataUrl}
                         alt="Lightning Invoice QR Code"
-                        className={`rounded-lg border-4 border-green-500 ${isMobile ? 'max-w-[150px]' : ''}`}
+                        className={`rounded-lg border-4 border-green-500 ${isMobile ? 'w-[140px] h-[140px]' : ''}`}
                       />
                     </div>
                   )}
 
-                  <div className={`text-green-400 ${isMobile ? 'text-sm' : 'text-lg'}`}>
-                    SCAN WITH YOUR LIGHTNING WALLET
-                  </div>
-
-                  {paymentConfirmed ? (
-                    <div className={`bg-green-900/30 border border-green-500 rounded animate-pulse ${isMobile ? 'p-2' : 'p-4'}`}>
-                      <div className={`text-green-400 font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
-                        ✓ PAYMENT CONFIRMED!
-                      </div>
-                      <div className={`text-green-300 ${isMobile ? 'text-xs mt-1' : 'text-sm mt-2'}`}>
-                        Starting game...
-                      </div>
+                  {/* Details - right side on mobile */}
+                  <div className={isMobile ? 'flex-1 flex flex-col justify-between space-y-1' : ''}>
+                    <div className={`text-green-400 ${isMobile ? 'text-xs' : 'text-lg'}`}>
+                      SCAN WITH YOUR LIGHTNING WALLET
                     </div>
-                  ) : (
-                    <>
-                      <div className={`bg-yellow-900/20 border border-yellow-600 rounded ${isMobile ? 'p-2' : 'p-3'}`}>
-                        <div className={`text-yellow-400 animate-pulse ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                          ⏳ WAITING FOR PAYMENT...
+
+                    {paymentConfirmed ? (
+                      <div className={`bg-green-900/30 border border-green-500 rounded animate-pulse ${isMobile ? 'p-1' : 'p-4'}`}>
+                        <div className={`text-green-400 font-bold ${isMobile ? 'text-sm' : 'text-2xl'}`}>
+                          ✓ PAYMENT CONFIRMED!
                         </div>
-                        <div className={`text-yellow-600 mt-1 ${isMobile ? 'text-[10px]' : 'text-xs'}`}>
-                          {isPolling ? 'Payment will be detected automatically' : 'Checking payment status...'}
+                        <div className={`text-green-300 ${isMobile ? 'text-[10px] mt-1' : 'text-sm mt-2'}`}>
+                          Starting game...
                         </div>
                       </div>
-
-                      <div className={`bg-black rounded border border-green-700 ${isMobile ? 'p-2' : 'p-3'}`}>
-                        <div className={`text-green-500 break-all ${isMobile ? 'text-[10px]' : 'text-xs'}`}>
-                          {lightningInvoice.slice(0, isMobile ? 40 : 60)}...
+                    ) : (
+                      <>
+                        <div className={`bg-yellow-900/20 border border-yellow-600 rounded ${isMobile ? 'p-1' : 'p-3'}`}>
+                          <div className={`text-yellow-400 animate-pulse ${isMobile ? 'text-[10px]' : 'text-sm'}`}>
+                            ⏳ WAITING FOR PAYMENT...
+                          </div>
+                          <div className={`text-yellow-600 mt-1 ${isMobile ? 'text-[8px]' : 'text-xs'}`}>
+                            {isPolling ? 'Auto-detecting payment' : 'Checking...'}
+                          </div>
                         </div>
-                      </div>
-                    </>
-                  )}
 
-                  <div className="flex gap-2">
+                        <div className={`bg-black rounded border border-green-700 ${isMobile ? 'p-1' : 'p-3'}`}>
+                          <div className={`text-green-500 break-all ${isMobile ? 'text-[8px]' : 'text-xs'}`}>
+                            {lightningInvoice.slice(0, isMobile ? 30 : 60)}...
+                          </div>
+                        </div>
+                      </>
+                    )}
+
                     <Button
                       onClick={copyInvoice}
                       variant="outline"
-                      className={`flex-1 border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'text-sm py-2' : 'text-lg py-5'}`}
+                      className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'text-xs py-1 w-full' : 'w-full text-lg py-5'}`}
                     >
                       {invoiceCopied ? (
                         <>
-                          <Check className={isMobile ? 'mr-1 h-4 w-4' : 'mr-2 h-5 w-5'} />
+                          <Check className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-5 w-5'} />
                           COPIED!
                         </>
                       ) : (
                         <>
-                          <Copy className={isMobile ? 'mr-1 h-4 w-4' : 'mr-2 h-5 w-5'} />
-                          COPY INVOICE
+                          <Copy className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-5 w-5'} />
+                          COPY
                         </>
                       )}
                     </Button>
                   </div>
-
-                  <Button
-                    onClick={() => {
-                      setLightningInvoice(null);
-                      setQrCodeDataUrl(null);
-                    }}
-                    variant="ghost"
-                    className={`w-full text-green-600 hover:text-green-400 ${isMobile ? 'text-sm' : 'text-lg'}`}
-                  >
-                    ← BACK
-                  </Button>
                 </div>
+
+                <Button
+                  onClick={() => {
+                    setLightningInvoice(null);
+                    setQrCodeDataUrl(null);
+                  }}
+                  variant="ghost"
+                  className={`w-full text-green-600 hover:text-green-400 ${isMobile ? 'text-xs mt-1' : 'text-lg'}`}
+                >
+                  ← BACK
+                </Button>
               </>
             )}
           </div>
