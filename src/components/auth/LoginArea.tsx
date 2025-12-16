@@ -12,9 +12,10 @@ import { cn } from '@/lib/utils';
 
 export interface LoginAreaProps {
   className?: string;
+  isMobile?: boolean;
 }
 
-export function LoginArea({ className }: LoginAreaProps) {
+export function LoginArea({ className, isMobile = false }: LoginAreaProps) {
   const { currentUser } = useLoggedInAccounts();
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [signupDialogOpen, setSignupDialogOpen] = useState(false);
@@ -29,20 +30,22 @@ export function LoginArea({ className }: LoginAreaProps) {
       {currentUser ? (
         <AccountSwitcher onAddAccountClick={() => setLoginDialogOpen(true)} />
       ) : (
-        <div className="flex gap-3 justify-center">
+        <div className={`flex justify-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
           <Button
             onClick={() => setLoginDialogOpen(true)}
-            className='flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground w-full font-medium transition-all hover:bg-primary/90 animate-scale-in'
+            variant="outline"
+            className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'h-6 px-2 text-xs' : 'h-9 px-3'}`}
           >
-            <User className='w-4 h-4' />
-            <span className='truncate'>Log in</span>
-          </Button><Button
+            <User className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-4 w-4'} />
+            LOGIN
+          </Button>
+          <Button
             onClick={() => setSignupDialogOpen(true)}
             variant="outline"
-            className="flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all"
+            className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'h-6 px-2 text-xs' : 'h-9 px-3'}`}
           >
-            <UserPlus className="w-4 h-4" />
-            <span>Sign Up</span>
+            <UserPlus className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-4 w-4'} />
+            SIGNUP
           </Button>
         </div>
       )}

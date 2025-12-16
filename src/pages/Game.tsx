@@ -1,13 +1,16 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle, LogOut, Wallet, UserPlus } from 'lucide-react';
+import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle, LogOut, Wallet, UserPlus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameCanvas } from '@/components/GameCanvas';
 import { LeaderboardEntry } from '@/components/LeaderboardEntry';
 import { LoginArea } from '@/components/auth/LoginArea';
 import LoginDialog from '@/components/auth/LoginDialog';
+import { TouchControls } from '@/components/TouchControls';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLoginActions } from '@/hooks/useLoginActions';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { useOrientation } from '@/hooks/useOrientation';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,6 +77,10 @@ export function Game() {
   const { user, picture, name } = useCurrentUser();
   const { logout } = useLoginActions();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
+  const orientation = useOrientation();
+  const [canvasScale, setCanvasScale] = useState(1);
+  const gameContainerRef = useRef<HTMLDivElement>(null);
   const { mutate: publishEvent } = useNostrPublish();
   const { data: leaderboard, refetch: refetchLeaderboard } = useGameScores(50, showLeaderboard);
   const { toast } = useToast();
@@ -276,6 +283,31 @@ export function Game() {
   useEffect(() => {
     isPausedRef.current = gameState.isPaused;
   }, [gameState.isPaused]);
+
+  // Calculate canvas scale to fit viewport
+  useEffect(() => {
+    const calculateScale = () => {
+      if (!gameContainerRef.current) return;
+      const container = gameContainerRef.current;
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
+
+      // Canvas is 800x600 plus border (8px total)
+      const canvasWidth = 808;
+      const canvasHeight = 608;
+
+      // Calculate scale to fit, with some padding
+      const scaleX = (containerWidth - 32) / canvasWidth;
+      const scaleY = (containerHeight - 32) / canvasHeight;
+      const scale = Math.min(scaleX, scaleY, 1.5); // Cap at 1.5x for large screens
+
+      setCanvasScale(Math.max(0.3, scale)); // Minimum 0.3x for very small screens
+    };
+
+    calculateScale();
+    window.addEventListener('resize', calculateScale);
+    return () => window.removeEventListener('resize', calculateScale);
+  }, []);
 
   const handleWalletPayment = async () => {
     if (!wallet) {
@@ -484,6 +516,43 @@ export function Game() {
     }
   };
 
+  // Touch control handlers for mobile
+  const handleTouchLeft = useCallback((pressed: boolean) => {
+    setKeys((prev) => {
+      const next = new Set(prev);
+      if (pressed) {
+        next.add('ArrowLeft');
+      } else {
+        next.delete('ArrowLeft');
+      }
+      return next;
+    });
+  }, []);
+
+  const handleTouchRight = useCallback((pressed: boolean) => {
+    setKeys((prev) => {
+      const next = new Set(prev);
+      if (pressed) {
+        next.add('ArrowRight');
+      } else {
+        next.delete('ArrowRight');
+      }
+      return next;
+    });
+  }, []);
+
+  const handleTouchFire = useCallback(() => {
+    if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
+      setGameState((state) => {
+        const newState = shootBullet(state);
+        if (newState !== state) {
+          audioEngine.playShoot();
+        }
+        return newState;
+      });
+    }
+  }, [hasStarted, gameState.gameOver, gameState.isPaused]);
+
   const publishScore = useCallback(async () => {
     if (!user) {
       setShowLoginToSave(true);
@@ -586,30 +655,43 @@ export function Game() {
     });
   }, [shareMessage, toast]);
 
+  // Show rotation prompt for mobile portrait mode
+  if (isMobile && orientation === 'portrait') {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-green-500 p-8">
+        <RotateCcw className="w-24 h-24 mb-8 animate-pulse text-green-400" />
+        <h1 className="text-3xl font-bold text-center mb-4">ROTATE YOUR DEVICE</h1>
+        <p className="text-xl text-green-300 text-center">
+          Turn your phone sideways for the best gameplay experience
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-black text-green-500 overflow-hidden flex flex-col">
       {/* CRT Effect Overlay */}
       <div className="fixed inset-0 pointer-events-none bg-[linear-gradient(transparent_50%,rgba(0,255,0,0.03)_50%)] bg-[length:100%_4px] z-50" />
 
       {/* Header Bar */}
-      <div className="relative z-10 bg-black border-b-2 border-green-500 px-6 py-3 flex justify-between items-center">
-        <div className="flex items-center gap-6">
-          <h1 className="text-4xl font-bold tracking-wider text-green-400 drop-shadow-[0_0_10px_rgba(0,255,0,0.8)]">
+      <div className={`relative z-10 bg-black border-b-2 border-green-500 flex justify-between items-center ${isMobile ? 'px-2 py-1' : 'px-6 py-3'}`}>
+        <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-6'}`}>
+          <h1 className={`font-bold tracking-wider text-green-400 drop-shadow-[0_0_10px_rgba(0,255,0,0.8)] ${isMobile ? 'text-xl' : 'text-4xl'}`}>
             SPACE ZAPPERS
           </h1>
-          <div className="bg-purple-500 text-white text-sm px-3 py-1 rounded font-bold">
+          <div className={`bg-purple-500 text-white rounded font-bold ${isMobile ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1'}`}>
             ⚡ 21 SATS
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="focus:outline-none">
-                  <Avatar className="h-10 w-10 border-2 border-green-500 cursor-pointer hover:border-green-400 transition-colors">
+                  <Avatar className={`border-2 border-green-500 cursor-pointer hover:border-green-400 transition-colors ${isMobile ? 'h-6 w-6' : 'h-9 w-9'}`}>
                     <AvatarImage src={picture} alt={name || 'User'} />
-                    <AvatarFallback className="bg-green-900 text-green-400">
+                    <AvatarFallback className="bg-green-900 text-green-400 text-xs">
                       {(name || user.pubkey.slice(0, 2)).toUpperCase().slice(0, 2)}
                     </AvatarFallback>
                   </Avatar>
@@ -642,75 +724,74 @@ export function Game() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <LoginArea className="max-w-48" />
+            <LoginArea isMobile={isMobile} />
           )}
 
           <Button
             variant="outline"
-            size="sm"
             onClick={() => setShowLeaderboard(true)}
-            className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg"
+            className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'h-6 px-2 text-xs' : 'h-9 px-3'}`}
           >
-            <Trophy className="mr-2 h-4 w-4" />
+            <Trophy className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-4 w-4'} />
             LEADERBOARD
           </Button>
 
           <Button
             variant="outline"
-            size="sm"
             onClick={() => setShowHowToPlay(true)}
-            className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg"
+            className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'h-6 px-2 text-xs' : 'h-9 px-3'}`}
           >
-            <HelpCircle className="mr-2 h-4 w-4" />
+            <HelpCircle className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-4 w-4'} />
             HOW TO PLAY
           </Button>
 
           <Button
             variant="outline"
-            size="icon"
             onClick={toggleMute}
-            className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
+            className={`p-0 border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'h-6 w-6' : 'h-9 w-9'}`}
           >
-            {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+            {isMuted ? <VolumeX className={isMobile ? 'h-3 w-3' : 'h-4 w-4'} /> : <Volume2 className={isMobile ? 'h-3 w-3' : 'h-4 w-4'} />}
           </Button>
 
-          {hasStarted && !gameState.gameOver && (
+          {hasStarted && !gameState.gameOver && !isMobile && (
             <Button
               variant="outline"
-              size="icon"
               onClick={togglePause}
-              className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
+              className="h-9 w-9 p-0 border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
             >
-              {gameState.isPaused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />}
+              {gameState.isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
             </Button>
           )}
         </div>
       </div>
 
       {/* Game Stats Bar */}
-      <div className="relative z-10 bg-black border-b-2 border-green-500 px-6 py-2 flex justify-between items-center text-2xl">
-        <div className="flex items-center gap-4">
+      <div className={`relative z-10 bg-black border-b-2 border-green-500 flex justify-between items-center ${isMobile ? 'px-2 py-1 text-sm' : 'px-6 py-2 text-2xl'}`}>
+        <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-4'}`}>
           <span className="text-green-400">SCORE</span>
           <span className="text-white font-bold">{gameState.score.toString().padStart(6, '0')}</span>
           {isFreePlay && hasStarted && !gameState.gameOver && (
-            <span className="text-yellow-400 text-sm animate-pulse">
-              FREE PLAY - {freePlayTimeLeft}s
+            <span className={`text-yellow-400 animate-pulse ${isMobile ? 'text-xs' : 'text-sm'}`}>
+              FREE - {freePlayTimeLeft}s
             </span>
           )}
         </div>
-        <div className="flex items-center gap-4">
+        <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-4'}`}>
           <span className="text-green-400">LIVES</span>
           <TankLives lives={gameState.player.lives} />
         </div>
-        <div className="flex items-center gap-4">
+        <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-4'}`}>
           <span className="text-green-400">LEVEL</span>
           <span className="text-white font-bold">{gameState.level}</span>
         </div>
       </div>
 
-      {/* Game Canvas - Full Screen */}
-      <div className="relative z-10 flex-1 flex items-center justify-center bg-black p-8">
-        <div className="relative">
+      {/* Game Canvas - Scales to fit viewport */}
+      <div ref={gameContainerRef} className="relative z-10 flex-1 flex items-center justify-center bg-black p-4 overflow-hidden">
+        <div
+          className="relative"
+          style={{ transform: `scale(${canvasScale})`, transformOrigin: 'center center' }}
+        >
           <GameCanvas gameState={gameState} playerFlashing={playerFlashing} />
 
           {/* Overlays */}
@@ -758,16 +839,32 @@ export function Game() {
 
           {/* Pause Overlay */}
           {gameState.isPaused && hasStarted && !gameState.gameOver && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
+            <div
+              className="absolute inset-0 flex items-center justify-center bg-black/80 z-20 cursor-pointer"
+              onClick={() => {
+                // Resume game on click/tap
+                if (gameState.bonusUFO && !isMuted) {
+                  audioEngine.startUfoSound();
+                }
+                if (!isMuted) {
+                  const aliveInvaders = gameState.invaders.filter((inv) => inv.isAlive).length;
+                  const speedRatio = aliveInvaders / 55;
+                  const tempo = Math.max(150, 500 * speedRatio);
+                  audioEngine.startMusic(tempo, gameState.level);
+                }
+                setGameState((state) => ({ ...state, isPaused: false }));
+              }}
+            >
               <div className="text-center space-y-6">
                 <div className="text-7xl text-yellow-400 font-bold animate-pulse">
                   PAUSED
                 </div>
                 <div className="text-2xl text-green-400 mb-4">
-                  PRESS ANY KEY TO CONTINUE
+                  {isMobile ? 'TAP TO CONTINUE' : 'PRESS ANY KEY TO CONTINUE'}
                 </div>
                 <Button
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent unpause
                     audioEngine.stopMusic();
                     audioEngine.stopUfoSound();
                     setHasStarted(false);
@@ -847,14 +944,28 @@ export function Game() {
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="relative z-10 bg-black border-t-2 border-green-500 px-6 py-2 text-center text-green-600 text-lg">
-        {hasStarted ? (
-          <span>← → or A/D: MOVE | SPACE: SHOOT | ESC: PAUSE</span>
-        ) : (
-          <span>VIBED BY NINIMONK05 • POWERED BY LIGHTNING ⚡</span>
-        )}
-      </div>
+      {/* Touch Controls for Mobile */}
+      {isMobile && hasStarted && !gameState.gameOver && !gameState.isPaused && (
+        <TouchControls
+          onLeftStart={() => handleTouchLeft(true)}
+          onLeftEnd={() => handleTouchLeft(false)}
+          onRightStart={() => handleTouchRight(true)}
+          onRightEnd={() => handleTouchRight(false)}
+          onFire={handleTouchFire}
+          onPause={togglePause}
+        />
+      )}
+
+      {/* Footer - hidden on mobile during gameplay */}
+      {!(isMobile && hasStarted && !gameState.gameOver) && (
+        <div className={`relative z-10 bg-black border-t-2 border-green-500 text-center text-green-600 ${isMobile ? 'px-2 py-1 text-xs' : 'px-6 py-2 text-lg'}`}>
+          {hasStarted ? (
+            <span>← → or A/D: MOVE | SPACE: SHOOT | ESC: PAUSE</span>
+          ) : (
+            <span>VIBED BY NINIMONK05 • POWERED BY LIGHTNING ⚡</span>
+          )}
+        </div>
+      )}
 
       {/* Leaderboard Dialog */}
       <Dialog open={showLeaderboard} onOpenChange={(open) => {

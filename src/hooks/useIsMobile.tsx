@@ -1,19 +1,26 @@
 import { useEffect, useState } from "react"
 
-const MOBILE_BREAKPOINT = 768;
-
+// Detect mobile by screen size
+// Landscape phones: height < 500px (regardless of width)
+// Portrait phones: width < 768px
 export function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT);
+  const [isMobile, setIsMobile] = useState(() => {
+    const isSmallHeight = window.innerHeight < 500; // Landscape phone
+    const isSmallWidth = window.innerWidth < 768; // Portrait phone
+    return isSmallHeight || isSmallWidth;
+  });
 
   useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-    const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    }
-    mql.addEventListener("change", onChange);
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    return () => mql.removeEventListener("change", onChange);
+    const checkMobile = () => {
+      const isSmallHeight = window.innerHeight < 500;
+      const isSmallWidth = window.innerWidth < 768;
+      setIsMobile(isSmallHeight || isSmallWidth);
+    };
+
+    window.addEventListener("resize", checkMobile);
+    checkMobile();
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  return !!isMobile;
+  return isMobile;
 }
