@@ -70,8 +70,8 @@ export const PLAYER_WIDTH = 48;
 export const PLAYER_HEIGHT = 24;
 export const INVADER_WIDTH = 32;
 export const INVADER_HEIGHT = 32;
-export const BULLET_WIDTH = 4;
-export const BULLET_HEIGHT = 12;
+export const BULLET_WIDTH = 6;
+export const BULLET_HEIGHT = 16;
 export const SHIELD_WIDTH = 160;
 export const SHIELD_HEIGHT = 60;
 export const PLAYER_SPEED = 5;
@@ -250,7 +250,7 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
     const ufoType = UFO_TYPES[Math.floor(Math.random() * UFO_TYPES.length)];
     newState.bonusUFO = {
       x: direction > 0 ? -UFO_WIDTH : GAME_WIDTH,
-      y: 50,
+      y: 65,
       width: UFO_WIDTH,
       height: UFO_HEIGHT,
       isAlive: true,
@@ -386,7 +386,7 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
       const direction = Math.random() < 0.5 ? 1 : -1;
       newState.bonusUFO = {
         x: direction > 0 ? -UFO_WIDTH : GAME_WIDTH,
-        y: 50,
+        y: 65,
         width: UFO_WIDTH,
         height: UFO_HEIGHT,
         isAlive: true,

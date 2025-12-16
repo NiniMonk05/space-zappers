@@ -318,21 +318,24 @@ function drawShield(
   }
 }
 
-// Draw lightning zap bullet
+// Draw lightning zap bullet - similar size to enemy bombs
 function drawZapBullet(ctx: CanvasRenderingContext2D, x: number, y: number, height: number) {
   ctx.fillStyle = '#ffff00'; // Yellow zap
 
-  // Draw a simple zap/lightning shape
-  ctx.beginPath();
-  ctx.moveTo(x + 2, y);
-  ctx.lineTo(x + 4, y + height * 0.4);
-  ctx.lineTo(x + 2, y + height * 0.4);
-  ctx.lineTo(x + 4, y + height);
-  ctx.lineTo(x, y + height * 0.6);
-  ctx.lineTo(x + 2, y + height * 0.6);
-  ctx.lineTo(x, y);
-  ctx.closePath();
-  ctx.fill();
+  // Draw a thick lightning bolt using pixel art style
+  const w = 6;
+  const h = height;
+
+  // Top segment
+  ctx.fillRect(x + w * 0.5, y, w * 0.5, h * 0.2);
+  // Upper diagonal (going left)
+  ctx.fillRect(x + w * 0.2, y + h * 0.2, w * 0.5, h * 0.2);
+  // Middle bar
+  ctx.fillRect(x, y + h * 0.4, w, h * 0.15);
+  // Lower diagonal (going right)
+  ctx.fillRect(x + w * 0.3, y + h * 0.55, w * 0.5, h * 0.2);
+  // Bottom point
+  ctx.fillRect(x + w * 0.4, y + h * 0.75, w * 0.3, h * 0.25);
 }
 
 function drawPixelArt(ctx: CanvasRenderingContext2D, x: number, y: number, pixels: string[], scale: number = 1) {

@@ -772,27 +772,6 @@ export function Game() {
         </div>
       </div>
 
-      {/* Game Stats Bar */}
-      <div className={`relative z-10 bg-black border-b-2 border-green-500 flex justify-between items-center ${isMobile ? 'px-2 py-1 text-sm' : 'px-6 py-2 text-2xl'}`}>
-        <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-4'}`}>
-          <span className="text-green-400">SCORE</span>
-          <span className="text-white font-bold">{gameState.score.toString().padStart(6, '0')}</span>
-          {isFreePlay && hasStarted && !gameState.gameOver && (
-            <span className={`text-yellow-400 animate-pulse ${isMobile ? 'text-xs' : 'text-sm'}`}>
-              FREE - {freePlayTimeLeft}s
-            </span>
-          )}
-        </div>
-        <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-4'}`}>
-          <span className="text-green-400">LIVES</span>
-          <TankLives lives={gameState.player.lives} />
-        </div>
-        <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-4'}`}>
-          <span className="text-green-400">LEVEL</span>
-          <span className="text-white font-bold">{gameState.level}</span>
-        </div>
-      </div>
-
       {/* Game Canvas - Scales to fit viewport */}
       <div ref={gameContainerRef} className="relative z-10 flex-1 flex items-center justify-center bg-black p-4 overflow-hidden">
         <div
@@ -800,6 +779,27 @@ export function Game() {
           style={{ transform: `scale(${canvasScale})`, transformOrigin: 'center center' }}
         >
           <GameCanvas gameState={gameState} playerFlashing={playerFlashing} />
+
+          {/* Stats Overlay - inside canvas */}
+          <div className="absolute top-0 left-0 right-0 flex items-center px-4 py-2 text-lg pointer-events-none" style={{ textShadow: '0 0 4px black, 0 0 8px black' }}>
+            <div className="flex-1 flex items-center gap-2">
+              <span className="text-green-400">SCORE</span>
+              <span className="text-white font-bold">{gameState.score.toString().padStart(6, '0')}</span>
+              {isFreePlay && hasStarted && !gameState.gameOver && (
+                <span className="text-yellow-400 animate-pulse text-sm">
+                  FREE - {freePlayTimeLeft}s
+                </span>
+              )}
+            </div>
+            <div className="flex-1 flex items-center justify-center gap-2">
+              <span className="text-green-400">LIVES</span>
+              <TankLives lives={gameState.player.lives} />
+            </div>
+            <div className="flex-1 flex items-center justify-end gap-2">
+              <span className="text-green-400">LEVEL</span>
+              <span className="text-white font-bold">{gameState.level}</span>
+            </div>
+          </div>
 
           {/* Overlays */}
           {!hasStarted && (
