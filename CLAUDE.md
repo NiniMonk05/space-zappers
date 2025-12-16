@@ -126,6 +126,36 @@ if (!user) return <LoginArea />;
 - Wrap components in `TestApp` for required providers
 - Test files: `*.test.tsx` alongside components
 
+## Production URLs
+
+- **Primary**: https://spacezappers.com (may become https://lnvaders.com in future)
+- **Local dev**: http://localhost:8088
+- **Container**: http://localhost:3001
+
+## Docker Deployment
+
+**IMPORTANT**: Do NOT deploy to production unless the user explicitly asks. The user often tests changes on localhost:8088 first before deploying.
+
+The container is defined in the apps-stack docker-compose, not in this repository.
+
+```bash
+# Build the new image
+cd /mnt/raid1/GitHub/black-panther/apps-stack
+docker compose build space-zappers
+
+# Stop and remove old container, then start new one
+docker stop space-zappers && docker rm space-zappers
+docker compose up -d space-zappers
+
+# Verify container is running locally (should return 200)
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3001
+
+# Verify production site is working
+curl -s -o /dev/null -w "%{http_code}" https://spacezappers.com
+```
+
+The container runs on port 3001 and includes both nginx (serving static files) and the score-service API.
+
 ## Important Notes
 
 - Always read AGENTS.md for detailed Nostr integration patterns
