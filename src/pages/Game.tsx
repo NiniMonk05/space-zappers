@@ -975,17 +975,25 @@ export function Game() {
       {/* Leaderboard Dialog */}
       <Dialog open={showLeaderboard} onOpenChange={(open) => {
         setShowLeaderboard(open);
-        if (open) refetchLeaderboard(); // Fetch fresh scores when opening
+        if (open) {
+          refetchLeaderboard(); // Fetch fresh scores when opening
+          // Pause game when opening dialog
+          if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
+            setGameState((state) => ({ ...state, isPaused: true }));
+            audioEngine.stopMusic();
+            audioEngine.stopUfoSound();
+          }
+        }
         if (!open) setHighlightedScore(null);
       }}>
-        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
+        <DialogContent className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] p-3' : 'max-w-md'}`}>
           <DialogHeader>
-            <DialogTitle className="text-3xl text-green-400 flex items-center gap-2">
-              <Trophy className="h-8 w-8" />
+            <DialogTitle className={`text-green-400 flex items-center gap-2 ${isMobile ? 'text-xl' : 'text-3xl'}`}>
+              <Trophy className={isMobile ? 'h-5 w-5' : 'h-8 w-8'} />
               TOP SCORES
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-1 max-h-96 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-green-500 [&::-webkit-scrollbar-thumb]:rounded">
+          <div className={`space-y-1 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-green-500 [&::-webkit-scrollbar-thumb]:rounded ${isMobile ? 'max-h-[60vh]' : 'max-h-96'}`}>
             {leaderboard && leaderboard.length > 0 ? (
               leaderboard.map((score, index) => {
                 const isCurrentUser = user && score.pubkey === user.pubkey;
@@ -1018,44 +1026,52 @@ export function Game() {
       </Dialog>
 
       {/* How to Play Dialog */}
-      <Dialog open={showHowToPlay} onOpenChange={setShowHowToPlay}>
-        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
+      <Dialog open={showHowToPlay} onOpenChange={(open) => {
+        setShowHowToPlay(open);
+        // Pause game when opening dialog
+        if (open && hasStarted && !gameState.gameOver && !gameState.isPaused) {
+          setGameState((state) => ({ ...state, isPaused: true }));
+          audioEngine.stopMusic();
+          audioEngine.stopUfoSound();
+        }
+      }}>
+        <DialogContent className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] overflow-y-auto p-3' : 'max-w-md'}`}>
           <DialogHeader>
-            <DialogTitle className="text-3xl text-green-400 flex items-center gap-2">
-              <HelpCircle className="h-8 w-8" />
+            <DialogTitle className={`text-green-400 flex items-center gap-2 ${isMobile ? 'text-xl' : 'text-3xl'}`}>
+              <HelpCircle className={isMobile ? 'h-5 w-5' : 'h-8 w-8'} />
               HOW TO PLAY
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 text-xl text-green-300">
-            <div className="flex items-start gap-3">
+          <div className={`text-green-300 ${isMobile ? 'space-y-2 text-sm' : 'space-y-4 text-xl'}`}>
+            <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">⚡</span>
               <span>PAY 21 SATS TO START THE GAME</span>
             </div>
-            <div className="flex items-start gap-3">
+            <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">👾</span>
               <span>DESTROY ALL INVADERS TO WIN</span>
             </div>
-            <div className="flex items-start gap-3">
+            <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">🎯</span>
               <span>EARN POINTS FOR EACH HIT</span>
             </div>
-            <div className="flex items-start gap-3">
+            <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">🎵</span>
               <span>MUSIC SPEEDS UP AS YOU DESTROY INVADERS</span>
             </div>
-            <div className="flex items-start gap-3">
+            <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">🏆</span>
               <span>PUBLISH YOUR SCORE ON NOSTR</span>
             </div>
-            <div className="flex items-start gap-3">
+            <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">🔑</span>
               <span>USE ← → OR A/D TO MOVE</span>
             </div>
-            <div className="flex items-start gap-3">
+            <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">🚀</span>
               <span>PRESS SPACE TO SHOOT</span>
             </div>
-            <div className="flex items-start gap-3">
+            <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">⏸️</span>
               <span>PRESS ESC TO PAUSE / QUIT</span>
             </div>
@@ -1076,20 +1092,20 @@ export function Game() {
           }
         }
       }}>
-        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
+        <DialogContent className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] overflow-y-auto p-3' : 'max-w-md'}`}>
           <DialogHeader>
-            <DialogTitle className="text-3xl" style={{ color: '#f7931a' }}>INSERT BITCOIN</DialogTitle>
-            <DialogDescription className="text-green-300 text-lg">
+            <DialogTitle className={isMobile ? 'text-xl' : 'text-3xl'} style={{ color: '#f7931a' }}>INSERT BITCOIN</DialogTitle>
+            <DialogDescription className={`text-green-300 ${isMobile ? 'text-sm' : 'text-lg'}`}>
               SEND 21 SATS VIA LIGHTNING TO PLAY
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className={isMobile ? 'space-y-2' : 'space-y-4'}>
             {hasPaid ? (
               <>
-                <div className="text-center py-6">
-                  <div className="text-7xl mb-4 font-mono text-green-400">[OK]</div>
-                  <div className="text-4xl font-bold text-green-400">PAYMENT RECEIVED!</div>
-                  <div className="text-xl text-green-300 mt-4">
+                <div className={`text-center ${isMobile ? 'py-2' : 'py-6'}`}>
+                  <div className={`font-mono text-green-400 ${isMobile ? 'text-4xl mb-2' : 'text-7xl mb-4'}`}>[OK]</div>
+                  <div className={`font-bold text-green-400 ${isMobile ? 'text-xl' : 'text-4xl'}`}>PAYMENT RECEIVED!</div>
+                  <div className={`text-green-300 ${isMobile ? 'text-sm mt-2' : 'text-xl mt-4'}`}>
                     21 SATS CONFIRMED
                   </div>
                 </div>
@@ -1099,34 +1115,34 @@ export function Game() {
                     setShowPayment(false);
                     startGame();
                   }}
-                  className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-2xl py-8"
+                  className={`w-full bg-green-500 text-black hover:bg-green-400 font-bold ${isMobile ? 'text-lg py-4' : 'text-2xl py-8'}`}
                 >
-                  <Play className="mr-2 h-8 w-8" />
-                  PLAY NOW (SPACE)
+                  <Play className={isMobile ? 'mr-2 h-5 w-5' : 'mr-2 h-8 w-8'} />
+                  PLAY NOW {!isMobile && '(SPACE)'}
                 </Button>
               </>
             ) : !lightningInvoice ? (
               <>
-                <div className="text-center py-6">
-                  <div className="text-7xl mb-4">⚡</div>
-                  <div className="text-5xl font-bold text-yellow-400">21 SATS</div>
-                  <div className="text-lg text-green-600 mt-2">
+                <div className={`text-center ${isMobile ? 'py-2' : 'py-6'}`}>
+                  <div className={isMobile ? 'text-4xl mb-2' : 'text-7xl mb-4'}>⚡</div>
+                  <div className={`font-bold text-yellow-400 ${isMobile ? 'text-2xl' : 'text-5xl'}`}>21 SATS</div>
+                  <div className={`text-green-600 ${isMobile ? 'text-xs mt-1' : 'text-lg mt-2'}`}>
                     TO {RECIPIENT_LIGHTNING_ADDRESS}
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className={isMobile ? 'space-y-2' : 'space-y-3'}>
                   {wallet && (
                     <Button
                       onClick={handleWalletPayment}
                       disabled={isPaymentProcessing}
-                      className="w-full bg-green-500 text-black hover:bg-green-400 font-bold text-xl py-7"
+                      className={`w-full bg-green-500 text-black hover:bg-green-400 font-bold ${isMobile ? 'text-base py-3' : 'text-xl py-7'}`}
                     >
                       {isPaymentProcessing ? (
                         <>PROCESSING...</>
                       ) : (
                         <>
-                          <Zap className="mr-2 h-6 w-6" />
+                          <Zap className={isMobile ? 'mr-2 h-4 w-4' : 'mr-2 h-6 w-6'} />
                           PAY WITH WALLET
                         </>
                       )}
@@ -1137,7 +1153,7 @@ export function Game() {
                     <div className="absolute inset-0 flex items-center">
                       <span className="w-full border-t border-green-700" />
                     </div>
-                    <div className="relative flex justify-center text-base uppercase">
+                    <div className={`relative flex justify-center uppercase ${isMobile ? 'text-sm' : 'text-base'}`}>
                       <span className="bg-gray-900 px-2 text-green-600">OR</span>
                     </div>
                   </div>
@@ -1146,7 +1162,7 @@ export function Game() {
                     onClick={handleGenerateInvoice}
                     disabled={isPaymentProcessing}
                     variant="outline"
-                    className="w-full border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-bold text-xl py-7"
+                    className={`w-full border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-bold ${isMobile ? 'text-base py-3' : 'text-xl py-7'}`}
                   >
                     {isPaymentProcessing ? (
                       <>GENERATING...</>
@@ -1158,44 +1174,44 @@ export function Game() {
               </>
             ) : (
               <>
-                <div className="text-center space-y-4">
+                <div className={`text-center ${isMobile ? 'space-y-2' : 'space-y-4'}`}>
                   {qrCodeDataUrl && (
                     <div className="flex justify-center">
                       <img
                         src={qrCodeDataUrl}
                         alt="Lightning Invoice QR Code"
-                        className="rounded-lg border-4 border-green-500"
+                        className={`rounded-lg border-4 border-green-500 ${isMobile ? 'max-w-[150px]' : ''}`}
                       />
                     </div>
                   )}
 
-                  <div className="text-lg text-green-400">
+                  <div className={`text-green-400 ${isMobile ? 'text-sm' : 'text-lg'}`}>
                     SCAN WITH YOUR LIGHTNING WALLET
                   </div>
 
                   {paymentConfirmed ? (
-                    <div className="bg-green-900/30 border border-green-500 p-4 rounded animate-pulse">
-                      <div className="text-2xl text-green-400 font-bold">
+                    <div className={`bg-green-900/30 border border-green-500 rounded animate-pulse ${isMobile ? 'p-2' : 'p-4'}`}>
+                      <div className={`text-green-400 font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
                         ✓ PAYMENT CONFIRMED!
                       </div>
-                      <div className="text-sm text-green-300 mt-2">
+                      <div className={`text-green-300 ${isMobile ? 'text-xs mt-1' : 'text-sm mt-2'}`}>
                         Starting game...
                       </div>
                     </div>
                   ) : (
                     <>
-                      <div className="bg-yellow-900/20 border border-yellow-600 p-3 rounded">
-                        <div className="text-sm text-yellow-400 animate-pulse">
+                      <div className={`bg-yellow-900/20 border border-yellow-600 rounded ${isMobile ? 'p-2' : 'p-3'}`}>
+                        <div className={`text-yellow-400 animate-pulse ${isMobile ? 'text-xs' : 'text-sm'}`}>
                           ⏳ WAITING FOR PAYMENT...
                         </div>
-                        <div className="text-xs text-yellow-600 mt-1">
+                        <div className={`text-yellow-600 mt-1 ${isMobile ? 'text-[10px]' : 'text-xs'}`}>
                           {isPolling ? 'Payment will be detected automatically' : 'Checking payment status...'}
                         </div>
                       </div>
 
-                      <div className="bg-black p-3 rounded border border-green-700">
-                        <div className="text-xs text-green-500 break-all">
-                          {lightningInvoice.slice(0, 60)}...
+                      <div className={`bg-black rounded border border-green-700 ${isMobile ? 'p-2' : 'p-3'}`}>
+                        <div className={`text-green-500 break-all ${isMobile ? 'text-[10px]' : 'text-xs'}`}>
+                          {lightningInvoice.slice(0, isMobile ? 40 : 60)}...
                         </div>
                       </div>
                     </>
@@ -1205,16 +1221,16 @@ export function Game() {
                     <Button
                       onClick={copyInvoice}
                       variant="outline"
-                      className="flex-1 border-green-500 text-green-500 hover:bg-green-500 hover:text-black text-lg py-5"
+                      className={`flex-1 border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'text-sm py-2' : 'text-lg py-5'}`}
                     >
                       {invoiceCopied ? (
                         <>
-                          <Check className="mr-2 h-5 w-5" />
+                          <Check className={isMobile ? 'mr-1 h-4 w-4' : 'mr-2 h-5 w-5'} />
                           COPIED!
                         </>
                       ) : (
                         <>
-                          <Copy className="mr-2 h-5 w-5" />
+                          <Copy className={isMobile ? 'mr-1 h-4 w-4' : 'mr-2 h-5 w-5'} />
                           COPY INVOICE
                         </>
                       )}
@@ -1227,7 +1243,7 @@ export function Game() {
                       setQrCodeDataUrl(null);
                     }}
                     variant="ghost"
-                    className="w-full text-green-600 hover:text-green-400 text-lg"
+                    className={`w-full text-green-600 hover:text-green-400 ${isMobile ? 'text-sm' : 'text-lg'}`}
                   >
                     ← BACK
                   </Button>
