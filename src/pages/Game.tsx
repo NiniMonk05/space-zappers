@@ -502,7 +502,14 @@ export function Game() {
   };
 
   const togglePause = () => {
-    setGameState((state) => ({ ...state, isPaused: !state.isPaused }));
+    setGameState((state) => {
+      if (!state.isPaused) {
+        // Pausing - stop audio
+        audioEngine.stopMusic();
+        audioEngine.stopUfoSound();
+      }
+      return { ...state, isPaused: !state.isPaused };
+    });
   };
 
   const toggleMute = () => {
@@ -956,16 +963,14 @@ export function Game() {
         />
       )}
 
-      {/* Footer - hidden on mobile during gameplay */}
-      {!(isMobile && hasStarted && !gameState.gameOver) && (
-        <div className={`relative z-10 bg-black border-t-2 border-green-500 text-center text-green-600 ${isMobile ? 'px-2 py-1 text-xs' : 'px-6 py-2 text-lg'}`}>
-          {hasStarted ? (
-            <span>← → or A/D: MOVE | SPACE: SHOOT | ESC: PAUSE</span>
-          ) : (
-            <span>VIBED BY NINIMONK05 • POWERED BY LIGHTNING ⚡</span>
-          )}
-        </div>
-      )}
+      {/* Footer */}
+      <div className={`relative z-10 bg-black border-t-2 border-green-500 text-center text-green-600 ${isMobile ? 'px-2 py-1 text-xs' : 'px-6 py-2 text-lg'}`}>
+        {hasStarted && !isMobile ? (
+          <span>← → or A/D: MOVE | SPACE: SHOOT | ESC: PAUSE</span>
+        ) : (
+          <span>VIBED BY NINIMONK05 • POWERED BY LIGHTNING ⚡</span>
+        )}
+      </div>
 
       {/* Leaderboard Dialog */}
       <Dialog open={showLeaderboard} onOpenChange={(open) => {
