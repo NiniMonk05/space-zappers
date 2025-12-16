@@ -256,12 +256,6 @@ function drawUFO(ctx: CanvasRenderingContext2D, x: number, y: number, points: nu
 
   drawPixelArt(ctx, x, y, pixels, 2.4);
 
-  // Draw glow effect matching UFO color
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 10;
-  drawPixelArt(ctx, x, y, pixels, 2.4);
-  ctx.shadowBlur = 0;
-
   // Draw points indicator - color matches UFO
   ctx.fillStyle = color;
   ctx.font = 'bold 18px monospace';
@@ -327,7 +321,6 @@ function drawShield(
 // Draw lightning zap bullet
 function drawZapBullet(ctx: CanvasRenderingContext2D, x: number, y: number, height: number) {
   ctx.fillStyle = '#ffff00'; // Yellow zap
-  ctx.strokeStyle = '#ff9900'; // Orange outline
 
   // Draw a simple zap/lightning shape
   ctx.beginPath();
@@ -340,12 +333,6 @@ function drawZapBullet(ctx: CanvasRenderingContext2D, x: number, y: number, heig
   ctx.lineTo(x, y);
   ctx.closePath();
   ctx.fill();
-
-  // Add glow effect
-  ctx.shadowColor = '#ffff00';
-  ctx.shadowBlur = 4;
-  ctx.fill();
-  ctx.shadowBlur = 0;
 }
 
 function drawPixelArt(ctx: CanvasRenderingContext2D, x: number, y: number, pixels: string[], scale: number = 1) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useCallback } from 'react';
 import { NostrEvent, NostrFilter, NPool, NRelay1 } from '@nostrify/nostrify';
 import { NostrContext } from '@nostrify/react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -6,6 +6,20 @@ import { useAppContext } from '@/hooks/useAppContext';
 
 interface NostrProviderProps {
   children: React.ReactNode;
+}
+
+interface NostrControlContextType {
+  closeAllConnections: () => Promise<void>;
+}
+
+const NostrControlContext = createContext<NostrControlContextType | null>(null);
+
+export function useNostrControl() {
+  const context = useContext(NostrControlContext);
+  if (!context) {
+    throw new Error('useNostrControl must be used within NostrProvider');
+  }
+  return context;
 }
 
 const NostrProvider: React.FC<NostrProviderProps> = (props) => {
@@ -26,9 +40,9 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
     queryClient.invalidateQueries({ queryKey: ['nostr'] });
   }, [config.relayMetadata, queryClient]);
 
-  // Initialize NPool only once
-  if (!pool.current) {
-    pool.current = new NPool({
+  // Function to create a new NPool instance
+  const createPool = useCallback(() => {
+    return new NPool({
       open(url: string) {
         return new NRelay1(url);
       },
@@ -57,12 +71,30 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
         return [...allRelays];
       },
     });
+  }, []);
+
+  // Initialize NPool only once
+  if (!pool.current) {
+    pool.current = createPool();
   }
 
+  // Close all relay connections (for gameplay performance)
+  const closeAllConnections = useCallback(async () => {
+    if (pool.current) {
+      await pool.current.close();
+      // Create a fresh pool for future use
+      pool.current = createPool();
+    }
+  }, [createPool]);
+
+  const controlValue = { closeAllConnections };
+
   return (
-    <NostrContext.Provider value={{ nostr: pool.current }}>
-      {children}
-    </NostrContext.Provider>
+    <NostrControlContext.Provider value={controlValue}>
+      <NostrContext.Provider value={{ nostr: pool.current }}>
+        {children}
+      </NostrContext.Provider>
+    </NostrControlContext.Provider>
   );
 };
 

@@ -24,7 +24,6 @@ class AudioEngine {
   initialize() {
     if (!this.context) {
       this.context = new (window.AudioContext || window.webkitAudioContext)();
-      console.log('[Audio] AudioContext initialized');
     }
   }
 
@@ -309,17 +308,12 @@ class AudioEngine {
   }
 
   startMusic(tempo: number = 500, level: number = 1) {
-    if (this.isMusicPlaying) {
-      console.log('[Audio] Music already playing');
-      return;
-    }
+    if (this.isMusicPlaying) return;
 
     this.initialize();
     this.currentTempo = tempo;
     this.currentLevel = level;
     this.isMusicPlaying = true;
-
-    console.log('[Audio] Starting music with tempo:', tempo, 'level:', level);
 
     let beatIndex = 0;
 

@@ -32,7 +32,8 @@ export function useLoggedInAccounts() {
         }
       });
     },
-    retry: 3,
+    staleTime: Infinity, // Don't auto-refetch during gameplay
+    retry: false, // Don't retry failed queries - causes lag
   });
 
   // Current user is the first login

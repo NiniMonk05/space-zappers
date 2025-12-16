@@ -27,6 +27,7 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       staleTime: 60000, // 1 minute
       gcTime: Infinity,
+      retry: false, // Don't retry failed queries - causes gameplay lag
     },
   },
 });
@@ -35,9 +36,10 @@ const defaultConfig: AppConfig = {
   theme: "light",
   relayMetadata: {
     relays: [
-      { url: 'wss://relay.ditto.pub', read: true, write: true },
-      { url: 'wss://relay.nostr.band', read: true, write: true },
+      // Game relays (where scores are published)
       { url: 'wss://relay.damus.io', read: true, write: true },
+      { url: 'wss://relay.nostr.band', read: true, write: true },
+      { url: 'wss://nos.lol', read: true, write: true },
     ],
     updatedAt: 0,
   },

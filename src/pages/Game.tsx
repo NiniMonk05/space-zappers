@@ -32,6 +32,7 @@ import { useLNbitsPayment } from '@/hooks/useLNbitsPayment';
 import QRCode from 'qrcode';
 import { TankLives } from '@/components/TankLives';
 import { WalletModal } from '@/components/WalletModal';
+import { useNostrControl } from '@/components/NostrProvider';
 
 const GAME_COST_SATS = 21;
 const RECIPIENT_LIGHTNING_ADDRESS = 'space.zappers@bank.weeksfamily.me';
@@ -73,10 +74,11 @@ export function Game() {
   const { logout } = useLoginActions();
   const queryClient = useQueryClient();
   const { mutate: publishEvent } = useNostrPublish();
-  const { data: leaderboard, refetch: refetchLeaderboard } = useGameScores(50);
+  const { data: leaderboard, refetch: refetchLeaderboard } = useGameScores(50, showLeaderboard);
   const { toast } = useToast();
   const wallet = useWallet();
   const { sendPayment, getActiveConnection } = useNWC();
+  const { closeAllConnections } = useNostrControl();
   const [highlightedScore, setHighlightedScore] = useState<number | null>(null);
   const [hasPublishedScore, setHasPublishedScore] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -196,9 +198,8 @@ export function Game() {
 
         if (newState.level > previousLevelRef.current) {
           audioEngine.playLevelUp();
-          audioEngine.setLevel(newState.level); // Update music to new level
+          audioEngine.setLevel(newState.level);
           previousLevelRef.current = newState.level;
-          // Show level popup
           setDisplayedLevel(newState.level);
           setShowLevelPopup(true);
           setTimeout(() => setShowLevelPopup(false), 2000);
@@ -214,7 +215,7 @@ export function Game() {
         // Update music tempo based on invader count
         const aliveInvaders = newState.invaders.filter((inv) => inv.isAlive).length;
         if (aliveInvaders !== previousInvaderCountRef.current) {
-          const speedRatio = aliveInvaders / 55; // Total invaders
+          const speedRatio = aliveInvaders / 55;
           audioEngine.updateTempo(speedRatio);
           previousInvaderCountRef.current = aliveInvaders;
         }
@@ -223,7 +224,6 @@ export function Game() {
         if (newState.player.lives < previousLivesRef.current && !newState.gameOver) {
           audioEngine.playPlayerHit();
           previousLivesRef.current = newState.player.lives;
-          // Flash the tank
           setPlayerFlashing(true);
           setTimeout(() => setPlayerFlashing(false), 500);
         }
@@ -252,7 +252,6 @@ export function Game() {
   // Control music during gameplay - only plays when game is active
   useEffect(() => {
     if (!hasStarted) {
-      // Don't start music until game starts
       return;
     }
 
@@ -260,7 +259,6 @@ export function Game() {
       audioEngine.stopMusic();
     } else if (!gameState.isPaused && !isMuted) {
       if (!audioEngine.isMusicPlaying) {
-        // Calculate correct tempo based on alive invaders
         const aliveInvaders = gameState.invaders.filter((inv) => inv.isAlive).length;
         const speedRatio = aliveInvaders / 55;
         const tempo = Math.max(150, 500 * speedRatio);
@@ -271,8 +269,6 @@ export function Game() {
     return () => {
       audioEngine.stopMusic();
     };
-  // Note: gameState.invaders intentionally not in deps to avoid re-running on every kill
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, gameState.level]);
 
   const handleWalletPayment = async () => {
@@ -443,10 +439,14 @@ export function Game() {
       }
     }
 
+    // Close all Nostr relay connections during gameplay to prevent lag
+    closeAllConnections();
+
     // Initialize audio on game start (browsers require user interaction)
     audioEngine.initialize();
     audioEngine.stopUfoSound(); // Stop any lingering UFO sound from previous game
 
+    // Reset game state
     setGameState(createInitialState());
     setHasStarted(true);
     setHasPublishedScore(false);
@@ -473,7 +473,6 @@ export function Game() {
     if (muted) {
       audioEngine.stopMusic();
     } else if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
-      // Only start music if game is actively playing
       audioEngine.startMusic();
     }
   };
@@ -853,6 +852,7 @@ export function Game() {
       {/* Leaderboard Dialog */}
       <Dialog open={showLeaderboard} onOpenChange={(open) => {
         setShowLeaderboard(open);
+        if (open) refetchLeaderboard(); // Fetch fresh scores when opening
         if (!open) setHighlightedScore(null);
       }}>
         <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
@@ -947,6 +947,10 @@ export function Game() {
           setLightningInvoice(null);
           setQrCodeDataUrl(null);
           setInvoiceCopied(false);
+          // Stop polling when dialog closes (unless already paid)
+          if (!hasPaid) {
+            resetPayment();
+          }
         }
       }}>
         <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">

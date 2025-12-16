@@ -18,7 +18,8 @@ export function useAuthor(pubkey: string | undefined) {
       );
 
       if (!event) {
-        throw new Error('No event found');
+        // Return empty instead of throwing to avoid retries
+        return {};
       }
 
       try {
@@ -28,7 +29,7 @@ export function useAuthor(pubkey: string | undefined) {
         return { event };
       }
     },
-    staleTime: 5 * 60 * 1000, // Keep cached data fresh for 5 minutes
-    retry: 3,
+    staleTime: Infinity, // Don't auto-refetch during gameplay
+    retry: false, // Don't retry failed queries
   });
 }

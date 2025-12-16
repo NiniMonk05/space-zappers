@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAppContext } from '@/hooks/useAppContext';
@@ -15,10 +15,13 @@ export function NostrSync() {
   const { nostr } = useNostr();
   const { user, nip05 } = useCurrentUser();
   const { config, updateConfig } = useAppContext();
+  const hasSyncedNip65 = useRef(false);
+  const hasSyncedNip05 = useRef(false);
 
-  // Sync NIP-65 relay list
+  // Sync NIP-65 relay list (only once per session)
   useEffect(() => {
-    if (!user) return;
+    if (!user || hasSyncedNip65.current) return;
+    hasSyncedNip65.current = true;
 
     const syncRelaysFromNostr = async () => {
       try {
@@ -60,9 +63,10 @@ export function NostrSync() {
     syncRelaysFromNostr();
   }, [user, config.relayMetadata.updatedAt, nostr, updateConfig]);
 
-  // Sync NIP-05 relays (if user has a NIP-05 identifier)
+  // Sync NIP-05 relays (only once per session)
   useEffect(() => {
-    if (!user || !nip05) return;
+    if (!user || !nip05 || hasSyncedNip05.current) return;
+    hasSyncedNip05.current = true;
 
     const syncRelaysFromNip05 = async () => {
       try {

@@ -103,6 +103,12 @@ export function useLNbitsPayment({
   }, [lnbitsUrl, apiKey]);
 
   const startPolling = useCallback((hash: string) => {
+    // Clear any existing polling before starting new one
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
     console.log('[Payment] Starting polling for hash:', hash);
     setIsPolling(true);
 

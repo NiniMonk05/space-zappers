@@ -134,3 +134,4 @@ if (!user) return <LoginArea />;
 - Game costs 21 sats to play (free mode available for testing)
 - Scores only publishable for paid games
 - Do not deploy to the docker container before we confirm it's working locally
+- Use npm run test before committing and pushing (or deploying)

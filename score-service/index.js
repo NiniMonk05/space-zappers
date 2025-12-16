@@ -12,7 +12,6 @@ const RELAYS = [
   'wss://relay.damus.io',
   'wss://relay.nostr.band',
   'wss://nos.lol',
-  'wss://relay.snort.social',
 ];
 
 if (!GAME_NSEC) {

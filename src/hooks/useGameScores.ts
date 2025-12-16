@@ -1,37 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { NPool, NRelay1 } from '@nostrify/nostrify';
-import type { NostrEvent, NostrFilter } from '@nostrify/nostrify';
+import { useNostr } from '@nostrify/react';
+import type { NostrEvent } from '@nostrify/nostrify';
 
 // Gamestr kind for game scores (addressable replaceable)
 export const GAME_SCORE_KIND = 30762;
 const GAME_ID = 'space-zappers';
 // Game's pubkey (from env) - used to query scores by author
 const GAME_PUBKEY = import.meta.env.VITE_GAME_PUBKEY;
-
-// Game-specific relays for leaderboard data
-const GAME_RELAYS = [
-  'wss://relay.damus.io',
-  'wss://relay.nostr.band',
-  'wss://nos.lol',
-  'wss://relay.snort.social',
-];
-
-// Dedicated pool for game score queries
-const gamePool = new NPool({
-  open(url: string) {
-    return new NRelay1(url);
-  },
-  reqRouter(filters: NostrFilter[]) {
-    const routes = new Map<string, NostrFilter[]>();
-    for (const url of GAME_RELAYS) {
-      routes.set(url, filters);
-    }
-    return routes;
-  },
-  eventRouter() {
-    return GAME_RELAYS;
-  },
-});
 
 export interface GameScore {
   pubkey: string; // Player's pubkey (from p tag)
@@ -76,13 +51,18 @@ function parseGameScore(event: NostrEvent): GameScore {
   };
 }
 
-export function useGameScores(limit = 50) {
+export function useGameScores(limit = 50, enabled = true) {
+  const { nostr } = useNostr();
+
   return useQuery({
     queryKey: ['game-scores', limit],
+    staleTime: Infinity, // Don't auto-refetch during gameplay
+    retry: false, // Don't retry failed queries - causes lag
+    enabled, // Only connect to relays when needed
     queryFn: async (c) => {
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
       // Query by game author pubkey (relays don't index #game tag)
-      const events = await gamePool.query(
+      const events = await nostr.query(
         [{ kinds: [GAME_SCORE_KIND], authors: [GAME_PUBKEY], limit: limit * 2 }],
         { signal }
       );
@@ -99,14 +79,18 @@ export function useGameScores(limit = 50) {
 }
 
 export function useUserBestScore(pubkey?: string) {
+  const { nostr } = useNostr();
+
   return useQuery({
     queryKey: ['user-best-score', pubkey],
+    staleTime: Infinity, // Don't auto-refetch during gameplay
+    retry: false, // Don't retry failed queries - causes lag
     queryFn: async (c) => {
       if (!pubkey) return null;
 
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
       // Query by game author and player pubkey
-      const events = await gamePool.query(
+      const events = await nostr.query(
         [{ kinds: [GAME_SCORE_KIND], authors: [GAME_PUBKEY], '#p': [pubkey], limit: 100 }],
         { signal }
       );
