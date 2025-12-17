@@ -1,11 +1,7 @@
 /**
  * 8-bit Audio Engine for Space Zappers
  * Creates retro arcade sounds using Web Audio API
- *
- * Uses unmute-ios-audio to bypass iOS mute switch limitation
  */
-
-import unmute from 'unmute-ios-audio';
 
 // Safari compatibility
 declare global {
@@ -24,104 +20,35 @@ class AudioEngine {
   public isMusicPlaying = false;
   public isUfoPlaying = false;
   private isMuted = false;
-  private initialized = false;
 
   /**
    * Initialize audio context - MUST be called during a user gesture (click/tap)
    */
   initialize() {
-    if (this.initialized && this.context) {
-      // Just resume if already initialized
+    if (!this.context) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      this.context = new AudioContextClass();
+    }
+    // Always resume - required for iOS/Safari
+    if (this.context.state === 'suspended') {
       this.context.resume();
-      return;
-    }
-
-    try {
-      // Create context if needed
-      if (!this.context) {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        this.context = new AudioContextClass();
-      }
-
-      // Use unmute-ios-audio to enable audio even with mute switch on
-      // This plays a silent HTML5 audio track to force Web Audio onto media channel
-      unmute(this.context);
-
-      // Resume the context
-      this.context.resume().catch((err) => {
-        console.error('[Audio] Resume failed:', err);
-      });
-
-      // Play a test beep to confirm audio is working
-      this.playTestBeep();
-
-      this.initialized = true;
-
-    } catch (err) {
-      console.error('[Audio] Initialize failed:', err);
     }
   }
 
   /**
-   * Play a short test beep to confirm audio is working
-   */
-  private playTestBeep() {
-    if (!this.context) return;
-
-    try {
-      const oscillator = this.context.createOscillator();
-      const gainNode = this.context.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(this.context.destination);
-
-      oscillator.type = 'sine';
-      oscillator.frequency.value = 880;
-
-      gainNode.gain.setValueAtTime(0.1, this.context.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, this.context.currentTime + 0.1);
-
-      oscillator.start(this.context.currentTime);
-      oscillator.stop(this.context.currentTime + 0.1);
-    } catch (err) {
-      console.error('[Audio] Test beep failed:', err);
-    }
-  }
-
-  /**
-   * Set up auto-unlock on first user interaction
+   * Set up auto-unlock on first user interaction (for mobile browsers)
    */
   setupAutoUnlock() {
     const unlockHandler = () => {
       this.initialize();
     };
-
-    // Use capture phase to fire before other handlers
     document.addEventListener('touchstart', unlockHandler, { capture: true, once: true });
     document.addEventListener('touchend', unlockHandler, { capture: true, once: true });
     document.addEventListener('click', unlockHandler, { capture: true, once: true });
   }
 
-  /**
-   * Ensure context is ready before playing sounds
-   */
-  private ensureReady(): boolean {
-    if (!this.context) {
-      console.warn('[Audio] No context - call initialize() first');
-      return false;
-    }
-
-    // Always try to resume if not running
-    if (this.context.state !== 'running') {
-      this.context.resume();
-    }
-
-    return true;
-  }
-
   private createOscillator(frequency: number, duration: number, type: OscillatorType = 'square') {
     if (!this.context || this.isMuted) return;
-    this.ensureReady();
 
     const oscillator = this.context.createOscillator();
     const gainNode = this.context.createGain();
@@ -141,7 +68,6 @@ class AudioEngine {
 
   playShoot() {
     if (!this.context || this.isMuted) return;
-    this.ensureReady();
 
     // Enhanced laser sound with dual oscillators
     const duration = 0.15;
@@ -175,7 +101,6 @@ class AudioEngine {
 
   playExplosion() {
     if (!this.context || this.isMuted) return;
-    this.ensureReady();
 
     // Enhanced explosion with noise and tonal elements
     const duration = 0.4;
@@ -223,7 +148,6 @@ class AudioEngine {
 
   playGameOver() {
     if (!this.context || this.isMuted) return;
-    this.ensureReady();
 
     // Dramatic descending game over melody
     const notes = [
@@ -247,7 +171,6 @@ class AudioEngine {
 
   playPlayerHit() {
     if (!this.context || this.isMuted) return;
-    this.ensureReady();
 
     // Alarm/damage sound when player is hit
     const duration = 0.4;
@@ -283,7 +206,6 @@ class AudioEngine {
 
   playLevelUp() {
     if (!this.context || this.isMuted) return;
-    this.ensureReady();
 
     // Triumphant level up fanfare
     const melody = [
@@ -383,7 +305,6 @@ class AudioEngine {
 
   private playDrum(freq: number, volume: number) {
     if (!this.context || this.isMuted) return;
-    this.ensureReady();
 
     const osc = this.context.createOscillator();
     const gain = this.context.createGain();
@@ -448,7 +369,6 @@ class AudioEngine {
     if (this.isUfoPlaying || this.isMuted) return;
 
     this.initialize();
-    this.ensureReady();
     this.isUfoPlaying = true;
 
     const playUfoBleep = () => {
@@ -483,7 +403,6 @@ class AudioEngine {
 
   playUfoHit() {
     if (!this.context || this.isMuted) return;
-    this.ensureReady();
 
     this.stopUfoSound();
 
