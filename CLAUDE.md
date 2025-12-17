@@ -175,3 +175,5 @@ npx resvg-cli --fit-width 180 --fit-height 180 public/favicon.svg public/apple-t
 - Do not deploy to the docker container before we confirm it's working locally
 - Use npm run test before committing and pushing (or deploying)
 - When coming across a problem and finding a solution relevant to end users/administrators, document it in docs/TROUBLESHOOTING.adoc (single table with Problem/Solution columns)
+- Always check the GitHub actions runs after pushing
+- Always check the GitHub action runs after pushing to GitHub

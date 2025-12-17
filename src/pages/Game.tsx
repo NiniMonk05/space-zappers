@@ -331,6 +331,18 @@ export function Game() {
     isPausedRef.current = gameState.isPaused;
   }, [gameState.isPaused]);
 
+  // Pause game when dialogs are open (useEffect ensures fresh state, avoids stale closures)
+  useEffect(() => {
+    if ((showLeaderboard || showHowToPlay) && hasStarted && !gameState.gameOver) {
+      if (!gameState.isPaused) {
+        setGameState((state) => ({ ...state, isPaused: true }));
+      }
+      // Always stop audio when dialogs are open (handles race conditions with game loop)
+      audioEngine.stopMusic();
+      audioEngine.stopUfoSound();
+    }
+  }, [showLeaderboard, showHowToPlay, hasStarted, gameState.gameOver, gameState.isPaused]);
+
   // Calculate canvas scale to fit viewport
   useEffect(() => {
     const calculateScale = () => {
@@ -1112,12 +1124,6 @@ export function Game() {
           // Invalidate cache and refetch - ensures fresh data after relay reconnect
           queryClient.invalidateQueries({ queryKey: ['game-scores'] });
           refetchLeaderboard();
-          // Pause game when opening dialog
-          if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
-            setGameState((state) => ({ ...state, isPaused: true }));
-            audioEngine.stopMusic();
-            audioEngine.stopUfoSound();
-          }
         }
         if (!open) setHighlightedScore(null);
       }}>
@@ -1169,15 +1175,7 @@ export function Game() {
       </Dialog>
 
       {/* How to Play Dialog */}
-      <Dialog open={showHowToPlay} onOpenChange={(open) => {
-        setShowHowToPlay(open);
-        // Pause game when opening dialog
-        if (open && hasStarted && !gameState.gameOver && !gameState.isPaused) {
-          setGameState((state) => ({ ...state, isPaused: true }));
-          audioEngine.stopMusic();
-          audioEngine.stopUfoSound();
-        }
-      }}>
+      <Dialog open={showHowToPlay} onOpenChange={setShowHowToPlay}>
         <DialogContent aria-describedby={undefined} className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[85vw] max-h-[80vh] overflow-y-auto p-3 mx-auto' : 'max-w-md'}`}>
           <DialogHeader>
             <DialogTitle className={`text-green-400 flex items-center gap-2 ${isMobile ? 'text-xl' : 'text-3xl'}`}>
