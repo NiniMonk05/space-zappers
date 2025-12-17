@@ -23,8 +23,9 @@ COPY score-service/package*.json ./
 RUN npm ci --only=production
 COPY score-service/index.js ./
 
-# Copy built game files
+# Copy built game files and fix permissions
 COPY --from=builder /app/dist /usr/share/nginx/html
+RUN chmod -R 644 /usr/share/nginx/html/* && chmod 755 /usr/share/nginx/html /usr/share/nginx/html/assets
 
 # Nginx config - serves static files and proxies /api to score service
 RUN mkdir -p /etc/nginx/http.d && echo 'server { \
