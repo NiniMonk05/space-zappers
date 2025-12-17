@@ -44,13 +44,22 @@ export function NostrSync() {
               }));
 
             if (fetchedRelays.length > 0) {
-              updateConfig((current) => ({
-                ...current,
-                relayMetadata: {
-                  relays: fetchedRelays,
-                  updatedAt: event.created_at,
-                },
-              }));
+              // Merge NIP-65 relays with existing relays (keeps game relays)
+              updateConfig((current) => {
+                const existingRelays = current.relayMetadata?.relays ?? [];
+                const existingUrls = new Set(existingRelays.map(r => r.url));
+
+                // Add new relays that aren't already in the list
+                const newRelays = fetchedRelays.filter(r => !existingUrls.has(r.url));
+
+                return {
+                  ...current,
+                  relayMetadata: {
+                    relays: [...existingRelays, ...newRelays],
+                    updatedAt: event.created_at,
+                  },
+                };
+              });
             }
           }
         }
