@@ -29,8 +29,8 @@ class AudioEngine {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       this.context = new AudioContextClass();
     }
-    // Always resume - required for iOS/Safari
-    if (this.context.state === 'suspended') {
+    // Resume if suspended or interrupted (iOS Safari uses "interrupted" state)
+    if (this.context.state === 'suspended' || (this.context.state as string) === 'interrupted') {
       this.context.resume();
     }
   }
@@ -42,9 +42,20 @@ class AudioEngine {
     const unlockHandler = () => {
       this.initialize();
     };
-    document.addEventListener('touchstart', unlockHandler, { capture: true, once: true });
-    document.addEventListener('touchend', unlockHandler, { capture: true, once: true });
-    document.addEventListener('click', unlockHandler, { capture: true, once: true });
+    // Multiple event types for better coverage
+    const events = ['touchstart', 'touchend', 'mousedown', 'click', 'keydown'];
+    events.forEach(event => {
+      document.addEventListener(event, unlockHandler, { capture: true, once: true });
+    });
+
+    // Resume audio when page becomes visible again (handles tab switching)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.context) {
+        if (this.context.state === 'suspended' || (this.context.state as string) === 'interrupted') {
+          this.context.resume();
+        }
+      }
+    });
   }
 
   private createOscillator(frequency: number, duration: number, type: OscillatorType = 'square') {
