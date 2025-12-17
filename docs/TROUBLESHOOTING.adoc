@@ -15,4 +15,7 @@ Known issues and their solutions.
 | Nostr extension not found when accessing via IP address
 | NIP-07 browser extensions like Nos2x only inject `window.nostr` on whitelisted origins. IP addresses are typically not whitelisted. Access via `localhost:8088` instead.
 
+| Can't use Nostr extension on mobile
+| Mobile Chrome doesn't support extensions. Use *Edge* (Android), *Kiwi Browser* (Android), or *Firefox* (Android) which support Chrome/Firefox extensions. On iOS, extension support is limited to Safari Web Extensions.
+
 |===
