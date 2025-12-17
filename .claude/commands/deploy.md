@@ -1,4 +1,6 @@
-# Deploy Space Zappers to Production
+---
+description: Deploy Space Zappers to production via Docker
+---
 
 Deploy the application to production via Docker. Follow these steps in order:
 
