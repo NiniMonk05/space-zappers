@@ -87,7 +87,7 @@ export function useGameScores(limit = 50, enabled = true) {
     retry: false, // Don't retry failed queries - causes lag
     enabled, // Only connect to relays when needed
     queryFn: async (c) => {
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
+      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(10000)]);
       // Query by game author pubkey (relays don't index #game tag)
       const events = await gamePool.query(
         [{ kinds: [GAME_SCORE_KIND], authors: [GAME_PUBKEY], limit: limit * 2 }],
@@ -113,7 +113,7 @@ export function useUserBestScore(pubkey?: string) {
     queryFn: async (c) => {
       if (!pubkey) return null;
 
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
+      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(10000)]);
       // Query by game author and player pubkey
       const events = await gamePool.query(
         [{ kinds: [GAME_SCORE_KIND], authors: [GAME_PUBKEY], '#p': [pubkey], limit: 100 }],
