@@ -138,14 +138,19 @@ if (!user) return <LoginArea />;
 
 The container is defined in the apps-stack docker-compose, not in this repository.
 
+**Prerequisites**: The `GAME_NSEC` environment variable must be set in `/mnt/raid1/GitHub/black-panther/apps-stack/.env` for the score service to start.
+
 ```bash
-# Build the new image
+# Build the new image (use --no-cache if Docker uses stale cached layers)
 cd /mnt/raid1/GitHub/black-panther/apps-stack
 docker compose build space-zappers
 
 # Stop and remove old container, then start new one
 docker stop space-zappers && docker rm space-zappers
 docker compose up -d space-zappers
+
+# Verify score service started (should show "Score service listening on port 3002")
+docker logs space-zappers --tail 5
 
 # Verify container is running locally (should return 200)
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3001

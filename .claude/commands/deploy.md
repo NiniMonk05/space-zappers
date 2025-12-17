@@ -19,7 +19,7 @@ git status
 If there are changes, commit them with a descriptive message and push to GitHub.
 
 ## 3. Build Docker Image
-Build the new Docker image from the latest GitHub code:
+Build the new Docker image. Use `--no-cache` if you suspect Docker is using stale cached layers:
 ```bash
 cd /mnt/raid1/GitHub/black-panther/apps-stack
 docker compose build space-zappers
@@ -33,7 +33,16 @@ cd /mnt/raid1/GitHub/black-panther/apps-stack
 docker compose up -d space-zappers
 ```
 
-## 5. Verify Deployment
+## 5. Verify Score Service
+Check that the score service started successfully:
+```bash
+docker logs space-zappers --tail 5
+```
+Should show: "Score service listening on port 3002"
+
+If it shows "GAME_NSEC environment variable is required", the `.env` file in apps-stack is missing the GAME_NSEC variable.
+
+## 6. Verify Deployment
 Check both local and production are responding:
 ```bash
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3001
@@ -41,7 +50,7 @@ curl -s -o /dev/null -w "%{http_code}" https://spacezappers.com
 ```
 Both should return 200.
 
-## 6. Check GitHub Actions
+## 7. Check GitHub Actions
 Remind the user to check GitHub Actions at: https://github.com/NiniMonk05/space-zappers/actions
 
 Report success or any failures encountered during deployment.
