@@ -8,6 +8,11 @@ const GAME_ID = 'space-zappers';
 // Game's pubkey (from env) - used to query scores by author
 const GAME_PUBKEY = import.meta.env.VITE_GAME_PUBKEY;
 
+// Validate at startup
+if (!GAME_PUBKEY) {
+  console.warn('[Leaderboard] VITE_GAME_PUBKEY not set - leaderboard will be empty');
+}
+
 export interface GameScore {
   pubkey: string; // Player's pubkey (from p tag)
   score: number;

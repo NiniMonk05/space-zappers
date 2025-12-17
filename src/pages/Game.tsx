@@ -1,4 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+
+// Android Chrome PWA install prompt event
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
 import { useQueryClient } from '@tanstack/react-query';
 import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle, LogOut, Wallet, UserPlus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -59,6 +65,7 @@ export function Game() {
   const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [isFreePlay, setIsFreePlay] = useState(false);
   const [freePlayTimeLeft, setFreePlayTimeLeft] = useState(60);
+  const [gameEndReason, setGameEndReason] = useState<'lives' | 'timeout' | null>(null);
   const freePlayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [showLevelPopup, setShowLevelPopup] = useState(false);
   const [displayedLevel, setDisplayedLevel] = useState(1);
@@ -80,9 +87,10 @@ export function Game() {
   const isMobile = useIsMobile();
   const orientation = useOrientation();
   const [canvasScale, setCanvasScale] = useState(1);
+  const [sideMargin, setSideMargin] = useState(0);
   const gameContainerRef = useRef<HTMLDivElement>(null);
   const { mutate: publishEvent } = useNostrPublish();
-  const { data: leaderboard, refetch: refetchLeaderboard } = useGameScores(50, showLeaderboard);
+  const { data: leaderboard, refetch: refetchLeaderboard, isLoading: leaderboardLoading, error: leaderboardError } = useGameScores(50, showLeaderboard);
   const { toast } = useToast();
   const wallet = useWallet();
   const { sendPayment, getActiveConnection } = useNWC();
@@ -90,6 +98,45 @@ export function Game() {
   const [highlightedScore, setHighlightedScore] = useState<number | null>(null);
   const [hasPublishedScore, setHasPublishedScore] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  // Check standalone mode synchronously on first render
+  const checkIsStandalone = () => {
+    if (typeof window === 'undefined') return false;
+    const standalone = window.matchMedia('(display-mode: standalone)').matches;
+    const fullscreen = window.matchMedia('(display-mode: fullscreen)').matches;
+    const iosStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+    return standalone || fullscreen || iosStandalone;
+  };
+
+  const [isStandalone] = useState(checkIsStandalone);
+  const [pwaPromptDismissed, setPwaPromptDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem('pwa-prompt-dismissed') === 'true';
+  });
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+
+  // Capture Android Chrome's beforeinstallprompt event
+  useEffect(() => {
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
+
+  // Detect platform for PWA instructions
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(navigator.userAgent);
+  // Skip PWA prompt only on localhost (DevTools emulation) - allow on local IPs for real device testing
+  const isDevToolsEmulation = window.location.hostname === 'localhost';
+  const isRealMobileDevice = (isIOS || isAndroid) && !isDevToolsEmulation;
+
+  // Set up audio auto-unlock for iOS Safari
+  useEffect(() => {
+    audioEngine.setupAutoUnlock();
+  }, []);
 
   // LNbits payment hook - creates invoices via LNURL and polls for payment
   const {
@@ -240,6 +287,8 @@ export function Game() {
           audioEngine.playGameOver();
           audioEngine.stopMusic();
           audioEngine.stopUfoSound();
+          // Only set 'lives' reason if not already set (timeout sets it first)
+          setGameEndReason((prev) => prev || 'lives');
         }
 
         return newState;
@@ -296,18 +345,35 @@ export function Game() {
       const canvasWidth = 808;
       const canvasHeight = 608;
 
-      // Calculate scale to fit, with some padding
-      const scaleX = (containerWidth - 32) / canvasWidth;
-      const scaleY = (containerHeight - 32) / canvasHeight;
+      // Calculate scale to fit, accounting for padding (smaller on mobile)
+      const padding = isMobile ? 8 : 32;
+      const scaleX = (containerWidth - padding) / canvasWidth;
+      const scaleY = (containerHeight - padding) / canvasHeight;
       const scale = Math.min(scaleX, scaleY, 1.5); // Cap at 1.5x for large screens
 
-      setCanvasScale(Math.max(0.3, scale)); // Minimum 0.3x for very small screens
+      const finalScale = Math.max(0.3, scale); // Minimum 0.3x for very small screens
+      setCanvasScale(finalScale);
+
+      // Calculate side margins for touch control positioning
+      const scaledCanvasWidth = canvasWidth * finalScale;
+      const margin = (containerWidth - scaledCanvasWidth) / 2;
+      setSideMargin(Math.max(0, margin));
     };
 
+    // Initial calculation after layout settles
     calculateScale();
+    // Recalculate after a short delay to catch late layout changes
+    const timeoutId = setTimeout(calculateScale, 100);
+    // Also use requestAnimationFrame for smoother initial sizing
+    const rafId = requestAnimationFrame(calculateScale);
+
     window.addEventListener('resize', calculateScale);
-    return () => window.removeEventListener('resize', calculateScale);
-  }, []);
+    return () => {
+      window.removeEventListener('resize', calculateScale);
+      clearTimeout(timeoutId);
+      cancelAnimationFrame(rafId);
+    };
+  }, [orientation, pwaPromptDismissed, isMobile]);
 
   const handleWalletPayment = async () => {
     if (!wallet) {
@@ -464,6 +530,7 @@ export function Game() {
             audioEngine.stopMusic();
             audioEngine.stopUfoSound();
             audioEngine.playGameOver();
+            setGameEndReason('timeout');
             setGameState((state) => ({ ...state, gameOver: true, player: { ...state.player, isAlive: false } }));
             return 0;
           }
@@ -490,6 +557,7 @@ export function Game() {
     setHasStarted(true);
     setHasPublishedScore(false);
     setHighlightedScore(null);
+    setGameEndReason(null);
     previousScoreRef.current = 0;
     previousLevelRef.current = 1;
     previousInvaderCountRef.current = 55;
@@ -510,6 +578,15 @@ export function Game() {
       }
       return { ...state, isPaused: !state.isPaused };
     });
+  };
+
+  // Pause the game when opening a dialog (if game is running)
+  const pauseForDialog = () => {
+    if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
+      setGameState((state) => ({ ...state, isPaused: true }));
+      audioEngine.stopMusic();
+      audioEngine.stopUfoSound();
+    }
   };
 
   const toggleMute = () => {
@@ -665,12 +742,48 @@ export function Game() {
   // Show rotation prompt for mobile portrait mode
   if (isMobile && orientation === 'portrait') {
     return (
-      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-green-500 p-8">
-        <RotateCcw className="w-24 h-24 mb-8 animate-pulse text-green-400" />
-        <h1 className="text-3xl font-bold text-center mb-4">ROTATE YOUR DEVICE</h1>
-        <p className="text-xl text-green-300 text-center">
-          Turn your phone sideways for the best gameplay experience
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-green-500 p-6" style={{ paddingBottom: 'env(safe-area-inset-bottom)', minHeight: '100dvh' }}>
+        <RotateCcw className="w-20 h-20 mb-6 animate-pulse text-green-400" />
+        <h1 className="text-2xl font-bold text-center mb-3">ROTATE YOUR DEVICE</h1>
+        <p className="text-lg text-green-300 text-center">
+          Turn your device sideways to play
         </p>
+      </div>
+    );
+  }
+
+  // Show PWA install prompt for real mobile devices not in standalone mode
+  if (isRealMobileDevice && !isStandalone && !pwaPromptDismissed) {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-green-500 p-6">
+        <div className="text-6xl mb-6">📱</div>
+        <h1 className="text-2xl font-bold text-center mb-3 text-purple-400">ADD TO HOME SCREEN</h1>
+        <p className="text-lg text-green-300 text-center mb-6">
+          For the best fullscreen experience
+        </p>
+
+        <div className="bg-purple-900/50 border border-purple-500 rounded-lg p-5 mb-8 max-w-sm">
+          <p className="text-purple-200 text-base text-center">
+            {isIOS ? (
+              <>Tap <strong>Share</strong> <span className="text-xl">⬆</span> then <strong>Add to Home Screen</strong></>
+            ) : isAndroid ? (
+              <>Tap <strong>⋮ Menu</strong> then <strong>Add to Home Screen</strong> or <strong>Install App</strong></>
+            ) : (
+              <>Use your browser menu to <strong>Add to Home Screen</strong> or <strong>Install</strong></>
+            )}
+          </p>
+        </div>
+
+        <button
+          onClick={() => {
+            audioEngine.initialize(); // Unlock audio on this tap
+            setPwaPromptDismissed(true);
+            sessionStorage.setItem('pwa-prompt-dismissed', 'true');
+          }}
+          className="text-green-600 hover:text-green-400 text-sm underline"
+        >
+          Continue without installing →
+        </button>
       </div>
     );
   }
@@ -681,7 +794,10 @@ export function Game() {
       <div className="fixed inset-0 pointer-events-none bg-[linear-gradient(transparent_50%,rgba(0,255,0,0.03)_50%)] bg-[length:100%_4px] z-50" />
 
       {/* Header Bar */}
-      <div className={`relative z-10 bg-black border-b-2 border-green-500 flex justify-between items-center ${isMobile ? 'px-2 py-1' : 'px-6 py-3'}`}>
+      <div
+        className={`relative z-10 bg-black border-b-2 border-green-500 flex justify-between items-center ${isMobile ? 'px-4 py-1' : 'px-6 py-3'}`}
+        style={isMobile ? { paddingLeft: 'max(1rem, env(safe-area-inset-left))', paddingRight: 'max(1rem, env(safe-area-inset-right))' } : undefined}
+      >
         <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-6'}`}>
           <h1 className={`font-bold tracking-wider text-green-400 drop-shadow-[0_0_10px_rgba(0,255,0,0.8)] ${isMobile ? 'text-xl' : 'text-4xl'}`}>
             SPACE ZAPPERS
@@ -715,7 +831,7 @@ export function Game() {
                   </DropdownMenuItem>
                 </WalletModal>
                 <DropdownMenuItem
-                  onClick={() => setShowAddAccountDialog(true)}
+                  onClick={() => { pauseForDialog(); setShowAddAccountDialog(true); }}
                   className="text-green-400 hover:text-green-300 hover:bg-green-900/20 cursor-pointer text-lg py-3"
                 >
                   <UserPlus className="mr-2 h-5 w-5" />
@@ -731,7 +847,7 @@ export function Game() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <LoginArea isMobile={isMobile} />
+            <LoginArea isMobile={isMobile} onDialogOpen={pauseForDialog} />
           )}
 
           <Button
@@ -772,8 +888,27 @@ export function Game() {
         </div>
       </div>
 
+      {/* Small PWA reminder banner - shows after dismissing fullscreen prompt */}
+      {isRealMobileDevice && !isStandalone && pwaPromptDismissed && (
+        <button
+          onClick={async () => {
+            if (installPrompt) {
+              // Android Chrome - trigger native install prompt
+              await installPrompt.prompt();
+              const result = await installPrompt.userChoice;
+              if (result.outcome === 'accepted') {
+                setInstallPrompt(null);
+              }
+            }
+          }}
+          className={`absolute top-12 right-2 z-20 bg-purple-900/90 border border-purple-500 rounded px-2 py-1 text-purple-200 text-[10px] max-w-[160px] text-left ${installPrompt ? 'cursor-pointer hover:bg-purple-800' : 'cursor-default'}`}
+        >
+          📱 {installPrompt ? 'Tap to install app' : 'Add to Home Screen for the best experience'}
+        </button>
+      )}
+
       {/* Game Canvas - Scales to fit viewport */}
-      <div ref={gameContainerRef} className="relative z-10 flex-1 flex items-center justify-center bg-black p-4 overflow-hidden">
+      <div ref={gameContainerRef} className={`relative z-10 flex-1 flex items-center justify-center bg-black overflow-hidden ${isMobile ? 'p-1' : 'p-4'}`}>
         <div
           className="relative"
           style={{ transform: `scale(${canvasScale})`, transformOrigin: 'center center' }}
@@ -893,8 +1028,8 @@ export function Game() {
           {gameState.gameOver && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/90">
               <div className="text-center space-y-6">
-                <div className="text-6xl text-red-500 font-bold animate-pulse mb-6">
-                  GAME OVER
+                <div className={`text-6xl font-bold animate-pulse mb-6 ${gameEndReason === 'timeout' ? 'text-yellow-500' : 'text-red-500'}`}>
+                  {gameEndReason === 'timeout' ? "TIME'S UP!" : 'GAME OVER'}
                 </div>
                 <div className="text-4xl text-white mb-6">
                   FINAL SCORE: {gameState.score}
@@ -960,17 +1095,20 @@ export function Game() {
           onRightEnd={() => handleTouchRight(false)}
           onFire={handleTouchFire}
           onPause={togglePause}
+          sideMargin={sideMargin}
         />
       )}
 
-      {/* Footer */}
-      <div className={`relative z-10 bg-black border-t-2 border-green-500 text-center text-green-600 ${isMobile ? 'px-2 py-1 text-xs' : 'px-6 py-2 text-lg'}`}>
-        {hasStarted && !isMobile ? (
-          <span>← → or A/D: MOVE | SPACE: SHOOT | ESC: PAUSE</span>
-        ) : (
-          <span>VIBED BY NINIMONK05 • POWERED BY LIGHTNING ⚡</span>
-        )}
-      </div>
+      {/* Footer - hidden on mobile to maximize play area */}
+      {!isMobile && (
+        <div className="relative z-10 bg-black border-t-2 border-green-500 text-center text-green-600 px-6 py-2 text-lg">
+          {hasStarted ? (
+            <span>← → or A/D: MOVE | SPACE: SHOOT | ESC: PAUSE</span>
+          ) : (
+            <span>VIBED BY NINIMONK05 • POWERED BY LIGHTNING ⚡</span>
+          )}
+        </div>
+      )}
 
       {/* Leaderboard Dialog */}
       <Dialog open={showLeaderboard} onOpenChange={(open) => {
@@ -988,7 +1126,7 @@ export function Game() {
         }
         if (!open) setHighlightedScore(null);
       }}>
-        <DialogContent aria-describedby={undefined} className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] p-3' : 'max-w-md'}`}>
+        <DialogContent aria-describedby={undefined} className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[85vw] max-h-[80vh] overflow-y-auto p-3 mx-auto' : 'max-w-md'}`}>
           <DialogHeader>
             <DialogTitle className={`text-green-400 flex items-center gap-2 ${isMobile ? 'text-xl' : 'text-3xl'}`}>
               <Trophy className={isMobile ? 'h-5 w-5' : 'h-8 w-8'} />
@@ -996,7 +1134,15 @@ export function Game() {
             </DialogTitle>
           </DialogHeader>
           <div className={`space-y-1 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-green-500 [&::-webkit-scrollbar-thumb]:rounded ${isMobile ? 'max-h-[60vh]' : 'max-h-96'}`}>
-            {leaderboard && leaderboard.length > 0 ? (
+            {leaderboardLoading ? (
+              <div className="text-center text-green-600 py-12 text-lg">
+                LOADING...
+              </div>
+            ) : leaderboardError ? (
+              <div className="text-center text-red-500 py-12 text-lg">
+                FAILED TO LOAD SCORES
+              </div>
+            ) : leaderboard && leaderboard.length > 0 ? (
               leaderboard.map((score, index) => {
                 const isCurrentUser = user && score.pubkey === user.pubkey;
                 const isHighlighted = isCurrentUser && highlightedScore === score.score;
@@ -1037,7 +1183,7 @@ export function Game() {
           audioEngine.stopUfoSound();
         }
       }}>
-        <DialogContent aria-describedby={undefined} className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] overflow-y-auto p-3' : 'max-w-md'}`}>
+        <DialogContent aria-describedby={undefined} className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[85vw] max-h-[80vh] overflow-y-auto p-3 mx-auto' : 'max-w-md'}`}>
           <DialogHeader>
             <DialogTitle className={`text-green-400 flex items-center gap-2 ${isMobile ? 'text-xl' : 'text-3xl'}`}>
               <HelpCircle className={isMobile ? 'h-5 w-5' : 'h-8 w-8'} />
@@ -1094,7 +1240,7 @@ export function Game() {
           }
         }
       }}>
-        <DialogContent className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[95vw] max-h-[85vh] overflow-y-auto p-3' : 'max-w-md'}`}>
+        <DialogContent className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[85vw] max-h-[80vh] overflow-y-auto p-3 mx-auto' : 'max-w-md'}`}>
           <DialogHeader>
             <DialogTitle className={isMobile ? 'text-xl' : 'text-3xl'} style={{ color: '#f7931a' }}>INSERT BITCOIN</DialogTitle>
             <DialogDescription className={`text-green-300 ${isMobile ? 'text-sm' : 'text-lg'}`}>
@@ -1260,7 +1406,7 @@ export function Game() {
 
       {/* Login to Save Score Dialog */}
       <Dialog open={showLoginToSave} onOpenChange={setShowLoginToSave}>
-        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-md border-4">
+        <DialogContent className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[85vw] max-h-[80vh] overflow-y-auto p-3 mx-auto' : 'max-w-md'}`}>
           <DialogHeader>
             <DialogTitle className="text-3xl text-green-400 flex items-center gap-2">
               <Trophy className="h-8 w-8" />
@@ -1305,35 +1451,35 @@ export function Game() {
 
       {/* Share to Nostr Dialog */}
       <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
-        <DialogContent className="bg-gray-900 border-green-500 text-green-500 max-w-lg border-4">
+        <DialogContent className={`bg-gray-900 border-green-500 text-green-500 border-4 ${isMobile ? 'max-w-[85vw] max-h-[80vh] overflow-y-auto p-3 mx-auto' : 'max-w-lg'}`}>
           <DialogHeader>
-            <DialogTitle className="text-3xl text-green-400 flex items-center gap-2">
-              <Share2 className="h-8 w-8" />
+            <DialogTitle className={`text-green-400 flex items-center gap-2 ${isMobile ? 'text-xl' : 'text-3xl'}`}>
+              <Share2 className={isMobile ? 'h-5 w-5' : 'h-8 w-8'} />
               SHARE YOUR VICTORY
             </DialogTitle>
-            <DialogDescription className="text-green-300 text-lg">
+            <DialogDescription className={`text-green-300 ${isMobile ? 'text-sm' : 'text-lg'}`}>
               Tell the world about your epic score!
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className={isMobile ? 'space-y-2 py-2' : 'space-y-4 py-4'}>
             <textarea
               value={shareMessage}
               onChange={(e) => setShareMessage(e.target.value)}
-              className="w-full h-40 bg-black border-2 border-green-500 rounded-lg p-4 text-green-300 text-lg resize-none focus:outline-none focus:border-green-400"
+              className={`w-full bg-black border-2 border-green-500 rounded-lg text-green-300 resize-none focus:outline-none focus:border-green-400 ${isMobile ? 'h-24 p-2 text-sm' : 'h-40 p-4 text-lg'}`}
               placeholder="Write your message..."
             />
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               {user ? (
                 <Button
                   onClick={publishSharePost}
-                  className="flex-1 bg-purple-600 text-white hover:bg-purple-500 font-bold text-xl py-6"
+                  className={`flex-1 bg-purple-600 text-white hover:bg-purple-500 font-bold ${isMobile ? 'text-sm py-3' : 'text-xl py-6'}`}
                 >
-                  <Zap className="mr-2 h-6 w-6" />
+                  <Zap className={isMobile ? 'mr-1 h-4 w-4' : 'mr-2 h-6 w-6'} />
                   POST TO NOSTR
                 </Button>
               ) : (
-                <div className="flex-1 space-y-3">
-                  <div className="text-center text-yellow-400 text-sm">
+                <div className="flex-1 space-y-2">
+                  <div className={`text-center text-yellow-400 ${isMobile ? 'text-xs' : 'text-sm'}`}>
                     Login to post directly to Nostr
                   </div>
                   <LoginArea className="w-full" />
@@ -1342,9 +1488,9 @@ export function Game() {
               <Button
                 onClick={copyShareMessage}
                 variant="outline"
-                className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-bold text-lg py-6"
+                className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-bold ${isMobile ? 'text-sm py-3' : 'text-lg py-6'}`}
               >
-                <Copy className="mr-2 h-5 w-5" />
+                <Copy className={isMobile ? 'mr-1 h-4 w-4' : 'mr-2 h-5 w-5'} />
                 COPY
               </Button>
             </div>

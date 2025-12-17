@@ -156,6 +156,14 @@ curl -s -o /dev/null -w "%{http_code}" https://spacezappers.com
 
 The container runs on port 3001 and includes both nginx (serving static files) and the score-service API.
 
+## Icon Generation
+
+To regenerate the apple-touch-icon.png from the favicon.svg (e.g., after updating the favicon):
+
+```bash
+npx resvg-cli --fit-width 180 --fit-height 180 public/favicon.svg public/apple-touch-icon.png
+```
+
 ## Important Notes
 
 - Always read AGENTS.md for detailed Nostr integration patterns

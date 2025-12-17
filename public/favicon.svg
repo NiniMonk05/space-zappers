@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Classic Space Invaders Crab Alien - Symmetrical -->
-  <rect fill="#000000" width="32" height="32"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 40 40">
+  <!-- Classic Space Invaders Crab Alien - Symmetrical with padding -->
+  <rect fill="#000000" x="-4" y="-4" width="40" height="40"/>
   <!-- Row 1: Antennae -->
   <rect fill="#00ff00" x="4" y="2" width="2" height="2"/>
   <rect fill="#00ff00" x="26" y="2" width="2" height="2"/>

@@ -13,9 +13,10 @@ import { cn } from '@/lib/utils';
 export interface LoginAreaProps {
   className?: string;
   isMobile?: boolean;
+  onDialogOpen?: () => void;
 }
 
-export function LoginArea({ className, isMobile = false }: LoginAreaProps) {
+export function LoginArea({ className, isMobile = false, onDialogOpen }: LoginAreaProps) {
   const { currentUser } = useLoggedInAccounts();
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [signupDialogOpen, setSignupDialogOpen] = useState(false);
@@ -25,14 +26,24 @@ export function LoginArea({ className, isMobile = false }: LoginAreaProps) {
     setSignupDialogOpen(false);
   };
 
+  const openLoginDialog = () => {
+    onDialogOpen?.();
+    setLoginDialogOpen(true);
+  };
+
+  const openSignupDialog = () => {
+    onDialogOpen?.();
+    setSignupDialogOpen(true);
+  };
+
   return (
     <div className={cn("inline-flex items-center justify-center", className)}>
       {currentUser ? (
-        <AccountSwitcher onAddAccountClick={() => setLoginDialogOpen(true)} />
+        <AccountSwitcher onAddAccountClick={openLoginDialog} />
       ) : (
         <div className={`flex justify-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
           <Button
-            onClick={() => setLoginDialogOpen(true)}
+            onClick={openLoginDialog}
             variant="outline"
             className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'h-6 px-2 text-xs' : 'h-9 px-3'}`}
           >
@@ -40,7 +51,7 @@ export function LoginArea({ className, isMobile = false }: LoginAreaProps) {
             LOGIN
           </Button>
           <Button
-            onClick={() => setSignupDialogOpen(true)}
+            onClick={openSignupDialog}
             variant="outline"
             className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'h-6 px-2 text-xs' : 'h-9 px-3'}`}
           >

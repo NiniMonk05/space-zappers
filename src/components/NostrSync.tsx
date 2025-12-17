@@ -44,7 +44,6 @@ export function NostrSync() {
               }));
 
             if (fetchedRelays.length > 0) {
-              console.log('Syncing relay list from NIP-65:', fetchedRelays);
               updateConfig((current) => ({
                 ...current,
                 relayMetadata: {
@@ -97,8 +96,6 @@ export function NostrSync() {
         // Check for relays in the NIP-05 response
         const nip05Relays = data.relays?.[user.pubkey];
         if (Array.isArray(nip05Relays) && nip05Relays.length > 0) {
-          console.log('Found relays in NIP-05:', nip05Relays);
-
           // Merge NIP-05 relays with existing relays (NIP-05 relays added if not already present)
           updateConfig((current) => {
             const existingRelays = current.relayMetadata?.relays ?? [];
@@ -108,7 +105,6 @@ export function NostrSync() {
               .map((url: string) => ({ url, read: true, write: true }));
 
             if (newRelays.length > 0) {
-              console.log('Adding NIP-05 relays:', newRelays);
               return {
                 ...current,
                 relayMetadata: {

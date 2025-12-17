@@ -48,7 +48,6 @@ export function usePaymentConfirmation({ paymentId, onConfirmed }: PaymentConfir
             const event = msg[2];
             // Validate the event
             if (validatePaymentConfirmation(event)) {
-              console.log('Payment confirmed via Nostr event:', event);
               setIsConfirmed(true);
               setConfirmationEvent(event);
 

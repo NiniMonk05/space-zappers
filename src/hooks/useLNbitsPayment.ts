@@ -78,7 +78,6 @@ export function useLNbitsPayment({
   const checkPaymentStatus = useCallback(async (hash: string): Promise<boolean> => {
     try {
       const url = `${lnbitsUrl}/api/v1/payments/${hash}`;
-      console.log('[Payment] Checking status:', url);
 
       const response = await fetch(url, {
         headers: {
@@ -94,7 +93,6 @@ export function useLNbitsPayment({
       const data = await response.json();
       // LNbits uses "status": "success" for paid invoices (not "paid": true)
       const isPaid = data.paid === true || data.status === 'success';
-      console.log('[Payment] Status response:', { paid: data.paid, status: data.status, isPaid, hash });
       return isPaid;
     } catch (err) {
       console.warn('[Payment] Error checking status:', err);
@@ -109,7 +107,6 @@ export function useLNbitsPayment({
       pollingRef.current = null;
     }
 
-    console.log('[Payment] Starting polling for hash:', hash);
     setIsPolling(true);
 
     pollingRef.current = setInterval(async () => {
@@ -177,7 +174,6 @@ export function useLNbitsPayment({
 
       // Extract payment hash from bolt11
       const hash = extractPaymentHash(invoiceData.pr);
-      console.log('[Payment] Extracted hash from invoice:', hash);
       if (!hash) {
         throw new Error('Could not extract payment hash');
       }
@@ -186,7 +182,6 @@ export function useLNbitsPayment({
       setPaymentHash(hash);
 
       // Start polling for payment status
-      console.log('[Payment] Invoice created, starting poll with LNbits URL:', lnbitsUrl);
       startPolling(hash);
 
       return invoiceData.pr;
