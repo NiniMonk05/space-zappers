@@ -9,4 +9,10 @@ Known issues and their solutions.
 | Game lags every few seconds in Microsoft Edge on Linux
 | Edge may be using software compositing instead of GPU acceleration. Go to `edge://flags`, search for "GPU rasterization", and set it to *Enabled*. Restart Edge.
 
+| Leaderboard shows "No scores yet" when accessing via Docker network IP (172.16.x.x)
+| WebSocket connections to Nostr relays may be blocked when the page is served from Docker network IPs. Access via `localhost:8088` or `192.168.x.x` instead.
+
+| Nostr extension not found when accessing via Docker network IP (172.16.x.x)
+| NIP-07 browser extensions like Nos2x only inject `window.nostr` on whitelisted origins. Docker network IPs are typically not whitelisted. Access via `localhost:8088` instead.
+
 |===

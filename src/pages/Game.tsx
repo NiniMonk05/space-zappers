@@ -41,7 +41,6 @@ import { useLNbitsPayment } from '@/hooks/useLNbitsPayment';
 import QRCode from 'qrcode';
 import { TankLives } from '@/components/TankLives';
 import { WalletModal } from '@/components/WalletModal';
-import { useNostrControl } from '@/components/NostrProvider';
 
 const GAME_COST_SATS = 21;
 const RECIPIENT_LIGHTNING_ADDRESS = 'space.zappers@bank.weeksfamily.me';
@@ -94,7 +93,6 @@ export function Game() {
   const { toast } = useToast();
   const wallet = useWallet();
   const { sendPayment, getActiveConnection } = useNWC();
-  const { closeAllConnections } = useNostrControl();
   const [highlightedScore, setHighlightedScore] = useState<number | null>(null);
   const [hasPublishedScore, setHasPublishedScore] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -544,9 +542,6 @@ export function Game() {
         freePlayTimerRef.current = null;
       }
     }
-
-    // Close all Nostr relay connections during gameplay to prevent lag
-    closeAllConnections();
 
     // Initialize audio on game start (browsers require user interaction)
     audioEngine.initialize();
