@@ -17,6 +17,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLoginActions } from '@/hooks/useLoginActions';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useOrientation } from '@/hooks/useOrientation';
+import { useGamepadControls } from '@/hooks/useGamepadControls';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +51,7 @@ const LNBITS_URL = import.meta.env.VITE_LNBITS_URL || '/lnbits';
 const LNBITS_INVOICE_KEY = import.meta.env.VITE_LNBITS_INVOICE_KEY || '';
 
 export function Game() {
+  useGamepadControls();
   const [gameState, setGameState] = useState<GameState>(createInitialState());
   const [keys, setKeys] = useState<Set<string>>(new Set());
   const [isMuted, setIsMuted] = useState(false);
@@ -1215,6 +1217,10 @@ export function Game() {
             <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">⏸️</span>
               <span>PRESS ESC TO PAUSE / QUIT</span>
+            </div>
+            <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
+              <span className="text-yellow-400">🎮</span>
+              <span>GAMEPAD: STICK / D-PAD TO MOVE, A TO SHOOT, START TO PAUSE</span>
             </div>
           </div>
         </DialogContent>
