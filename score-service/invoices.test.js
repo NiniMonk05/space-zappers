@@ -30,7 +30,7 @@ describe('createInvoiceService', () => {
     const fetchImpl = fakeLnbits();
     const svc = createInvoiceService({ lnbitsUrl: `${URL_BASE}/`, invoiceKey: KEY, fetchImpl, now: () => 1000, expirySeconds: 600 });
     const result = await svc.create({ amount: 21 }, '1.2.3.4');
-    expect(result).toEqual({ invoice: 'lnbc210n1test', paymentHash: HASH, expiresAt: 1000 + 600 * 1000 });
+    expect(result).toEqual({ invoice: 'lnbc210n1test', paymentHash: HASH, expiresAt: 1000 + 600 * 1000, expiresIn: 600 });
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe(`${URL_BASE}/api/v1/payments`);
     expect(init.headers['X-Api-Key']).toBe(KEY);
@@ -145,6 +145,18 @@ describe('intEnv', () => {
     expect(intEnv('X', 21, { env: { X: '12abc' }, ...quiet })).toBe(21);
     expect(intEnv('X', 21, { env: { X: '0' }, min: 1, ...quiet })).toBe(21);
     expect(warn).toHaveBeenCalledOnce();
+  });
+  it('accepts plain digits only', () => {
+    for (const X of ['+5', '-5', '1e3', '0x10', '5.0', '1_000']) {
+      expect(intEnv('X', 21, { env: { X }, ...quiet })).toBe(21);
+    }
+  });
+  it('enforces max (e.g. PORT <= 65535)', () => {
+    const warn = vi.fn();
+    expect(intEnv('PORT', 3002, { env: { PORT: '65535' }, min: 1, max: 65535, warn })).toBe(65535);
+    expect(intEnv('PORT', 3002, { env: { PORT: '65536' }, min: 1, max: 65535, warn })).toBe(3002);
+    expect(intEnv('PORT', 3002, { env: { PORT: '99999999999999999999' }, min: 1, max: 65535, warn })).toBe(3002);
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -6,7 +6,7 @@ import { createInvoiceService, clientIp, intEnv, InvoiceError } from './invoices
 // Polyfill WebSocket for Node.js
 globalThis.WebSocket = WebSocket;
 
-const PORT = intEnv('PORT', 3002, { min: 1 });
+const PORT = intEnv('PORT', 3002, { min: 1, max: 65535 });
 const HOST = process.env.HOST?.trim() || '0.0.0.0';
 const GAME_NSEC = process.env.GAME_NSEC;
 const GAME_ID = 'space-zappers';

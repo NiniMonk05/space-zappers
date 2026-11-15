@@ -4,7 +4,8 @@
 NODE_CMD=${NODE_CMD:-"node /score-service/index.js"}
 NGINX_CMD=${NGINX_CMD:-"nginx -g 'daemon off;'"}
 
-export HOST="${HOST:-127.0.0.1}"
+# Always loopback in the combined image, even if HOST is inherited from the environment
+export HOST=127.0.0.1
 export PORT="${PORT:-3002}"
 
 shutdown() {

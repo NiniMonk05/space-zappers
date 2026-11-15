@@ -9,13 +9,14 @@ export class InvoiceError extends Error {
   }
 }
 
-// Unset or empty (what compose passes for an unset ${VAR:-}) falls back silently; garbage falls back with a warning.
-export function intEnv(name, fallback, { min = 0, env = process.env, warn = console.warn } = {}) {
+// Unset or empty (what compose passes for an unset ${VAR:-}) falls back silently; anything but plain digits in [min, max] falls back with a warning.
+export function intEnv(name, fallback, { min = 0, max = Number.MAX_SAFE_INTEGER, env = process.env, warn = console.warn } = {}) {
   const raw = env[name];
   if (raw === undefined || raw.trim() === '') return fallback;
-  const value = Number(raw.trim());
-  if (!Number.isInteger(value) || value < min) {
-    warn(`${name}=${JSON.stringify(raw)} is not an integer >= ${min}; using ${fallback}`);
+  const trimmed = raw.trim();
+  const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    warn(`${name}=${JSON.stringify(raw)} is not an integer in [${min}, ${max}]; using ${fallback}`);
     return fallback;
   }
   return value;
@@ -144,7 +145,7 @@ export function createInvoiceService({
     const createdAt = now();
     const expiresAt = createdAt + expirySeconds * 1000;
     issued.set(paymentHash, { expiresAt, forgetAt: createdAt + trackMs, paid: false });
-    return { invoice, paymentHash, expiresAt };
+    return { invoice, paymentHash, expiresAt, expiresIn: expirySeconds };
   }
 
   async function status(hash, ip) {

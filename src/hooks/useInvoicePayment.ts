@@ -4,6 +4,7 @@ interface CreateInvoiceResponse {
   invoice: string;
   paymentHash: string;
   expiresAt: number;
+  expiresIn: number;
 }
 
 interface UseInvoicePaymentOptions {
@@ -17,6 +18,7 @@ interface UseInvoicePaymentReturn {
   paymentHash: string | null;
   isPaid: boolean;
   isPolling: boolean;
+  isExpired: boolean;
   error: string | null;
   reset: () => void;
 }
@@ -54,6 +56,7 @@ export function useInvoicePayment({
   const [paymentHash, setPaymentHash] = useState<string | null>(null);
   const [isPaid, setIsPaid] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [isExpired, setIsExpired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionRef = useRef<PollSession | null>(null);
   const onPaidRef = useRef(onPaid);
@@ -88,12 +91,10 @@ export function useInvoicePayment({
     }
   }, [apiBase]);
 
+  // Past the deadline this is the one final check, so a player who paid just before expiry and returns late still unlocks
   const poll = useCallback(async (session: PollSession) => {
     if (session.cancelled || session.inFlight) return;
-    if (Date.now() >= session.deadline) {
-      stopPolling();
-      return;
-    }
+    const isFinal = Date.now() >= session.deadline;
     if (session.timer) {
       clearTimeout(session.timer);
       session.timer = null;
@@ -109,12 +110,14 @@ export function useInvoicePayment({
       onPaidRef.current?.();
       return;
     }
-    if (result === 'gone') {
+    if (result === 'gone' || isFinal) {
       stopPolling();
+      setIsExpired(true);
       return;
     }
     session.delay = result === 'retry' ? Math.min(session.delay * 2, MAX_BACKOFF_MS) : POLL_INTERVAL_MS;
-    session.timer = setTimeout(() => void poll(session), session.delay);
+    const wait = Math.max(0, Math.min(session.delay, session.deadline - Date.now()));
+    session.timer = setTimeout(() => void poll(session), wait);
   }, [checkStatus, stopPolling]);
 
   // Mobile browsers throttle timers while the player is in their wallet app, so check as soon as the tab is visible again
@@ -127,9 +130,11 @@ export function useInvoicePayment({
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [poll]);
 
-  const startPolling = useCallback((hash: string, expiresAt: number) => {
+  // Deadline comes from expiresIn against the local clock, so a skewed device clock cannot cut polling short
+  const startPolling = useCallback((hash: string, expiresIn: number) => {
     stopPolling();
-    const deadline = Number.isFinite(expiresAt) && expiresAt > Date.now() ? expiresAt : Date.now() + FALLBACK_WINDOW_MS;
+    const windowMs = Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn * 1000 : FALLBACK_WINDOW_MS;
+    const deadline = Date.now() + windowMs;
     const session: PollSession = { hash, deadline, cancelled: false, inFlight: false, delay: POLL_INTERVAL_MS, timer: null };
     sessionRef.current = session;
     setIsPolling(true);
@@ -139,6 +144,7 @@ export function useInvoicePayment({
   const createInvoice = useCallback(async (amountSats: number): Promise<string> => {
     setError(null);
     setIsPaid(false);
+    setIsExpired(false);
 
     try {
       const response = await fetch(`${apiBase}/invoice`, {
@@ -156,7 +162,7 @@ export function useInvoicePayment({
 
       setInvoice(data.invoice);
       setPaymentHash(data.paymentHash);
-      startPolling(data.paymentHash, data.expiresAt);
+      startPolling(data.paymentHash, data.expiresIn);
 
       return data.invoice;
     } catch (err) {
@@ -171,6 +177,7 @@ export function useInvoicePayment({
     setInvoice(null);
     setPaymentHash(null);
     setIsPaid(false);
+    setIsExpired(false);
     setError(null);
   }, [stopPolling]);
 
@@ -180,6 +187,7 @@ export function useInvoicePayment({
     paymentHash,
     isPaid,
     isPolling,
+    isExpired,
     error,
     reset,
   };

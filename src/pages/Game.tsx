@@ -137,6 +137,7 @@ export function Game() {
     createInvoice: createLNbitsInvoice,
     isPaid: paymentConfirmed,
     isPolling,
+    isExpired: invoiceExpired,
     reset: resetPayment,
   } = useInvoicePayment({
     onPaid: () => {
@@ -1310,7 +1311,7 @@ export function Game() {
               <>
                 <div className={isMobile ? 'flex gap-3' : 'text-center space-y-4'}>
                   {/* QR Code - left side on mobile */}
-                  {qrCodeDataUrl && (
+                  {qrCodeDataUrl && !invoiceExpired && (
                     <div className={isMobile ? 'flex-shrink-0' : 'flex justify-center'}>
                       <img
                         src={qrCodeDataUrl}
@@ -1322,9 +1323,11 @@ export function Game() {
 
                   {/* Details - right side on mobile */}
                   <div className={isMobile ? 'flex-1 flex flex-col justify-between space-y-1' : ''}>
-                    <div className={`text-green-400 ${isMobile ? 'text-xs' : 'text-lg'}`}>
-                      SCAN WITH YOUR LIGHTNING WALLET
-                    </div>
+                    {!invoiceExpired && (
+                      <div className={`text-green-400 ${isMobile ? 'text-xs' : 'text-lg'}`}>
+                        SCAN WITH YOUR LIGHTNING WALLET
+                      </div>
+                    )}
 
                     {paymentConfirmed ? (
                       <div className={`bg-green-900/30 border border-green-500 rounded animate-pulse ${isMobile ? 'p-1' : 'p-4'}`}>
@@ -1334,6 +1337,23 @@ export function Game() {
                         <div className={`text-green-300 ${isMobile ? 'text-[10px] mt-1' : 'text-sm mt-2'}`}>
                           Starting game...
                         </div>
+                      </div>
+                    ) : invoiceExpired ? (
+                      <div className={`bg-red-900/20 border border-red-600 rounded space-y-2 ${isMobile ? 'p-2' : 'p-4'}`}>
+                        <div className={`text-red-400 font-bold ${isMobile ? 'text-sm' : 'text-xl'}`}>
+                          INVOICE EXPIRED
+                        </div>
+                        <div className={`text-red-300 ${isMobile ? 'text-[10px]' : 'text-sm'}`}>
+                          No payment was detected in time. Get a new invoice to play.
+                        </div>
+                        <Button
+                          onClick={handleGenerateInvoice}
+                          disabled={isPaymentProcessing}
+                          variant="outline"
+                          className={`w-full border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-bold ${isMobile ? 'text-xs py-1' : 'text-lg py-5'}`}
+                        >
+                          {isPaymentProcessing ? 'GENERATING...' : 'GET NEW INVOICE'}
+                        </Button>
                       </div>
                     ) : (
                       <>
@@ -1354,23 +1374,25 @@ export function Game() {
                       </>
                     )}
 
-                    <Button
-                      onClick={copyInvoice}
-                      variant="outline"
-                      className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'text-xs py-1 w-full' : 'w-full text-lg py-5'}`}
-                    >
-                      {invoiceCopied ? (
-                        <>
-                          <Check className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-5 w-5'} />
-                          COPIED!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-5 w-5'} />
-                          COPY
-                        </>
-                      )}
-                    </Button>
+                    {!invoiceExpired && (
+                      <Button
+                        onClick={copyInvoice}
+                        variant="outline"
+                        className={`border-green-500 text-green-500 hover:bg-green-500 hover:text-black ${isMobile ? 'text-xs py-1 w-full' : 'w-full text-lg py-5'}`}
+                      >
+                        {invoiceCopied ? (
+                          <>
+                            <Check className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-5 w-5'} />
+                            COPIED!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className={isMobile ? 'mr-1 h-3 w-3' : 'mr-2 h-5 w-5'} />
+                            COPY
+                          </>
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
 
