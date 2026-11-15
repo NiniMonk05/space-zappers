@@ -14,14 +14,14 @@ RUN npm run build
 # Production stage - Nginx + Score Service
 FROM node:20-alpine
 
-# Install nginx and supervisor
+# Install nginx
 RUN apk add --no-cache nginx
 
 # Set up score service
 WORKDIR /score-service
 COPY score-service/package*.json ./
 RUN npm ci --only=production
-COPY score-service/index.js ./
+COPY score-service/index.js score-service/invoices.js ./
 
 # Copy built game files and fix permissions
 COPY --from=builder /app/dist /usr/share/nginx/html
@@ -40,10 +40,11 @@ RUN mkdir -p /etc/nginx/http.d && echo 'server { \
         proxy_http_version 1.1; \
         proxy_set_header Host $host; \
         proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
     } \
 }' > /etc/nginx/http.d/default.conf
 
-# Start script - runs both nginx and score service
+# Start script - runs both nginx and score service; LNBITS_URL, LNBITS_INVOICE_KEY and GAME_NSEC are read from the container env at runtime
 RUN printf '#!/bin/sh\ncd /score-service && node index.js &\nnginx -g "daemon off;"\n' > /start.sh && \
     chmod +x /start.sh
 

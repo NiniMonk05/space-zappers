@@ -38,9 +38,9 @@ Check that the score service started successfully:
 ```bash
 docker logs space-zappers --tail 5
 ```
-Should show: "Score service listening on port 3002"
+Should show: "Score service listening on port 3002" and "Invoices: enabled"
 
-If it shows "GAME_NSEC environment variable is required", the `.env` file in apps-stack is missing the GAME_NSEC variable.
+If it shows "GAME_NSEC not set" or "LNBITS_URL / LNBITS_INVOICE_KEY not set", the `.env` file in apps-stack is missing those variables for the space-zappers service (score publishing or payments will return 503).
 
 ## 6. Verify Deployment
 Check both local and production are responding:

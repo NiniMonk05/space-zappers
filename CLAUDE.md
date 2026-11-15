@@ -28,6 +28,8 @@ npm run deploy   # Build and deploy via nostr-deploy-cli
    ```
    GAME_NSEC=nsec1...
    VITE_GAME_PUBKEY=<64-char-hex-pubkey>
+   LNBITS_URL=https://<lnbits-host>
+   LNBITS_INVOICE_KEY=<game wallet invoice key>
    ```
 2. Run `npm run dev` - starts both frontend and score service
 3. Access game at http://localhost:8088
@@ -53,10 +55,10 @@ Always run `npm run test` after making changes to validate TypeScript, linting, 
 The `score-service/` directory contains a Node.js API that signs score events with the game's private key (GAME_NSEC). This prevents players from faking scores.
 
 ### Lightning Payment Flow
-1. User clicks "Pay 21 sats" → generates invoice via `src/lib/lightningInvoice.ts`
-2. Unique payment ID embedded in invoice comment (format: `szap_<timestamp>_<random>`)
-3. LNbits webhook publishes kind 8550 event to Nostr on payment
-4. Frontend subscribes to payment-id tag, auto-starts game when confirmed
+1. User clicks "Pay 21 sats" → `src/hooks/useInvoicePayment.ts` calls `POST /api/invoice`
+2. `score-service/invoices.js` creates the invoice on LNbits with `LNBITS_INVOICE_KEY` (server-side env only)
+3. Frontend polls `GET /api/invoice/<payment_hash>` and starts the game when it returns `paid: true`
+4. Never put an LNbits key (or any secret) in a `VITE_*` variable: Vite bakes those into the public bundle
 
 ### NWC (Nostr Wallet Connect)
 - `src/hooks/useNWC.ts` - NWC connection management
@@ -138,7 +140,7 @@ if (!user) return <LoginArea />;
 
 The container is defined in the apps-stack docker-compose, not in this repository.
 
-**Prerequisites**: The `GAME_NSEC` environment variable must be set in `/mnt/raid1/GitHub/black-panther/apps-stack/.env` for the score service to start.
+**Prerequisites**: `GAME_NSEC` (score signing), `LNBITS_URL` and `LNBITS_INVOICE_KEY` (payments) must be passed to the `space-zappers` service from `/mnt/raid1/GitHub/black-panther/apps-stack/.env`. Missing values disable the matching endpoint (503) rather than stopping the service.
 
 ```bash
 # Build the new image (use --no-cache if Docker uses stale cached layers)
@@ -149,7 +151,7 @@ docker compose build space-zappers
 docker stop space-zappers && docker rm space-zappers
 docker compose up -d space-zappers
 
-# Verify score service started (should show "Score service listening on port 3002")
+# Verify score service started (should show "Score service listening on port 3002" and "Invoices: enabled")
 docker logs space-zappers --tail 5
 
 # Verify container is running locally (should return 200)

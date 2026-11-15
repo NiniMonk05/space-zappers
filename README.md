@@ -51,13 +51,15 @@ npm run deploy
 
 ## Lightning Payment Flow
 
-1. Game generates invoice via Lightning address
-2. Unique payment ID embedded in invoice comment
-3. User pays with any Lightning wallet
-4. LNbits webhook publishes confirmation to Nostr (kind 8550)
+1. The game calls `POST /api/invoice` on the score service (same origin, proxied by the container's nginx)
+2. The score service creates the invoice on the game's LNbits wallet using `LNBITS_INVOICE_KEY`, which never leaves the server
+3. User pays with any Lightning wallet (or one-click via NWC / WebLN)
+4. The game polls `GET /api/invoice/<payment_hash>`; the score service checks LNbits and returns only `{ "paid": true|false }`
 5. Game detects payment and starts automatically
 
-See [WEBHOOK.md](./WEBHOOK.md) for webhook setup instructions.
+The browser never holds an LNbits key: an invoice key exposes the wallet's balance and payment history, so it must stay server-side. `POST /api/invoice` is public, so the service bounds the amount (`INVOICE_MIN_SATS`..`INVOICE_MAX_SATS`, default 1-1000), trims the memo, throttles per client IP and globally, and only answers status checks for invoices it issued.
+
+[WEBHOOK.md](./WEBHOOK.md) and [SETUP_PAYMENT_DETECTION.md](./SETUP_PAYMENT_DETECTION.md) describe an older webhook + Nostr (kind 8550) design that is not used by the current game.
 
 See [TROUBLESHOOTING.adoc](./docs/TROUBLESHOOTING.adoc) for known issues and solutions.
 
@@ -112,19 +114,27 @@ docker build -t space-zappers .
 docker run -d --name space-zappers \
   -p 3001:80 \
   -e GAME_NSEC=nsec1your_game_nsec_here \
+  -e LNBITS_URL=https://your-lnbits.example.com \
+  -e LNBITS_INVOICE_KEY=your_invoice_key_here \
   space-zappers
 ```
 
-The `GAME_NSEC` environment variable is your game's Nostr private key for signing scores.
+All secrets are runtime environment variables of the container, read by the score service; none are baked into the image or the JS bundle.
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `GAME_NSEC` | for scores | Game's Nostr private key for signing scores. Without it, `/api/publish-score` returns 503. |
+| `LNBITS_URL` | for payments | Base URL of the LNbits instance holding the game wallet. |
+| `LNBITS_INVOICE_KEY` | for payments | Invoice/read key of the game wallet (never the admin key). Without it, `/api/invoice` returns 503. |
+| `INVOICE_MIN_SATS` / `INVOICE_MAX_SATS` | no | Invoice amount bounds (default 1 / 1000). |
+| `TRUSTED_PROXY_HOPS` | no | Reverse proxies in front of the score service, used to find the client IP for throttling (default 2: container nginx + host proxy). |
 
 ## Configuration
 
 The game sends payments to a configured Lightning address. To use your own:
 
-1. Edit `src/pages/Game.tsx`
-2. Update `RECIPIENT_LIGHTNING_ADDRESS`
-3. Set up LNbits webhook (see WEBHOOK.md)
-4. Configure `VITE_SCORE_SERVICE_URL` to point to your score service
+1. Set `LNBITS_URL` and `LNBITS_INVOICE_KEY` for the score service to your wallet's LNbits instance and invoice key
+2. Edit `RECIPIENT_LIGHTNING_ADDRESS` in `src/pages/Game.tsx` (display only)
 
 ## Project Structure
 

@@ -37,17 +37,13 @@ import {
 } from '@/lib/gameEngine';
 import { audioEngine } from '@/lib/audioEngine';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useLNbitsPayment } from '@/hooks/useLNbitsPayment';
+import { useInvoicePayment } from '@/hooks/useInvoicePayment';
 import QRCode from 'qrcode';
 import { TankLives } from '@/components/TankLives';
 import { WalletModal } from '@/components/WalletModal';
 
 const GAME_COST_SATS = 21;
 const RECIPIENT_LIGHTNING_ADDRESS = 'space.zappers@bank.weeksfamily.me';
-
-// LNbits configuration from environment
-const LNBITS_URL = import.meta.env.VITE_LNBITS_URL || '/lnbits';
-const LNBITS_INVOICE_KEY = import.meta.env.VITE_LNBITS_INVOICE_KEY || '';
 
 export function Game() {
   const [gameState, setGameState] = useState<GameState>(createInitialState());
@@ -136,16 +132,13 @@ export function Game() {
     audioEngine.setupAutoUnlock();
   }, []);
 
-  // LNbits payment hook - creates invoices via LNURL and polls for payment
+  // Invoice payment hook - the score service creates the invoice and reports payment
   const {
     createInvoice: createLNbitsInvoice,
     isPaid: paymentConfirmed,
     isPolling,
     reset: resetPayment,
-  } = useLNbitsPayment({
-    lightningAddress: RECIPIENT_LIGHTNING_ADDRESS,
-    lnbitsUrl: LNBITS_URL,
-    apiKey: LNBITS_INVOICE_KEY,
+  } = useInvoicePayment({
     onPaid: () => {
       setHasPaid(true);
       // Keep dialog open, just clear the invoice/QR
@@ -454,7 +447,7 @@ export function Game() {
     setIsPaymentProcessing(true);
 
     try {
-      // Create invoice via LNbits API (also starts polling for payment)
+      // Create invoice via the score service (also starts polling for payment)
       const invoice = await createLNbitsInvoice(GAME_COST_SATS, 'Space Zappers - 21 sats to play');
 
       setLightningInvoice(invoice);

@@ -1,6 +1,7 @@
 import http from 'node:http';
 import WebSocket from 'ws';
 import { nip19, finalizeEvent, SimplePool } from 'nostr-tools';
+import { createInvoiceService, clientIp, InvoiceError } from './invoices.js';
 
 // Polyfill WebSocket for Node.js
 globalThis.WebSocket = WebSocket;
@@ -14,27 +15,38 @@ const RELAYS = [
   'wss://nos.lol',
 ];
 
-if (!GAME_NSEC) {
-  console.error('GAME_NSEC environment variable is required');
-  process.exit(1);
-}
+const TRUSTED_PROXY_HOPS = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? '2', 10);
+const MAX_BODY_BYTES = 4096;
 
-// Decode nsec to get private key
+// Missing GAME_NSEC disables score publishing only, so invoices keep working
 let privateKey;
 let gamePubkey;
-try {
-  const decoded = nip19.decode(GAME_NSEC);
-  if (decoded.type !== 'nsec') {
-    throw new Error('Invalid nsec format');
+if (!GAME_NSEC) {
+  console.warn('GAME_NSEC not set - score publishing disabled');
+} else {
+  try {
+    const decoded = nip19.decode(GAME_NSEC);
+    if (decoded.type !== 'nsec') {
+      throw new Error('Invalid nsec format');
+    }
+    privateKey = decoded.data;
+    const { getPublicKey } = await import('nostr-tools/pure');
+    gamePubkey = getPublicKey(privateKey);
+    console.log('Game pubkey:', gamePubkey);
+  } catch (err) {
+    console.error('Failed to decode GAME_NSEC:', err.message);
+    process.exit(1);
   }
-  privateKey = decoded.data;
-  // Get pubkey from private key
-  const { getPublicKey } = await import('nostr-tools/pure');
-  gamePubkey = getPublicKey(privateKey);
-  console.log('Game pubkey:', gamePubkey);
-} catch (err) {
-  console.error('Failed to decode GAME_NSEC:', err.message);
-  process.exit(1);
+}
+
+const invoices = createInvoiceService({
+  lnbitsUrl: process.env.LNBITS_URL,
+  invoiceKey: process.env.LNBITS_INVOICE_KEY,
+  minSats: Number.parseInt(process.env.INVOICE_MIN_SATS ?? '1', 10),
+  maxSats: Number.parseInt(process.env.INVOICE_MAX_SATS ?? '1000', 10),
+});
+if (!invoices.configured) {
+  console.warn('LNBITS_URL / LNBITS_INVOICE_KEY not set - invoice endpoints disabled');
 }
 
 const pool = new SimplePool();
@@ -43,7 +55,13 @@ const pool = new SimplePool();
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => body += chunk);
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > MAX_BODY_BYTES) {
+        reject(new Error('Request body too large'));
+        req.destroy();
+      }
+    });
     req.on('end', () => {
       try {
         resolve(JSON.parse(body));
@@ -60,7 +78,7 @@ function sendJson(res, status, data) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   });
   res.end(JSON.stringify(data));
@@ -134,6 +152,16 @@ async function publishScore({ playerPubkey, score, level, difficulty, duration }
   };
 }
 
+function sendInvoiceError(res, err) {
+  if (err instanceof InvoiceError) {
+    sendJson(res, err.status, { error: err.message });
+    return;
+  }
+  const status = err.message === 'Invalid JSON' || err.message === 'Request body too large' ? 400 : 500;
+  if (status === 500) console.error('Invoice endpoint error:', err);
+  sendJson(res, status, { error: status === 400 ? err.message : 'Internal error' });
+}
+
 // HTTP server
 const server = http.createServer(async (req, res) => {
   // Handle CORS preflight
@@ -144,12 +172,40 @@ const server = http.createServer(async (req, res) => {
 
   // Health check
   if (req.method === 'GET' && req.url === '/health') {
-    sendJson(res, 200, { status: 'ok', gamePubkey });
+    sendJson(res, 200, { status: 'ok', gamePubkey, invoices: invoices.configured });
+    return;
+  }
+
+  // Create a Lightning invoice on the game wallet
+  if (req.method === 'POST' && req.url === '/invoice') {
+    const ip = clientIp(req.headers['x-forwarded-for'], req.socket.remoteAddress, TRUSTED_PROXY_HOPS);
+    try {
+      const body = await parseBody(req);
+      sendJson(res, 200, await invoices.create(body, ip));
+    } catch (err) {
+      sendInvoiceError(res, err);
+    }
+    return;
+  }
+
+  // Payment status for an invoice this service issued
+  const statusMatch = req.method === 'GET' && req.url?.match(/^\/invoice\/([^/?#]+)$/);
+  if (statusMatch) {
+    const ip = clientIp(req.headers['x-forwarded-for'], req.socket.remoteAddress, TRUSTED_PROXY_HOPS);
+    try {
+      sendJson(res, 200, await invoices.status(statusMatch[1], ip));
+    } catch (err) {
+      sendInvoiceError(res, err);
+    }
     return;
   }
 
   // Publish score endpoint
   if (req.method === 'POST' && req.url === '/publish-score') {
+    if (!privateKey) {
+      sendJson(res, 503, { error: 'Score publishing is not configured' });
+      return;
+    }
     try {
       const body = await parseBody(req);
 
@@ -189,4 +245,5 @@ server.listen(PORT, () => {
   console.log(`Score service listening on port ${PORT}`);
   console.log(`Game ID: ${GAME_ID}`);
   console.log(`Relays: ${RELAYS.join(', ')}`);
+  console.log(`Invoices: ${invoices.configured ? 'enabled' : 'disabled'}`);
 });
