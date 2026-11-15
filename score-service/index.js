@@ -1,12 +1,13 @@
 import http from 'node:http';
 import WebSocket from 'ws';
 import { nip19, finalizeEvent, SimplePool } from 'nostr-tools';
-import { createInvoiceService, clientIp, InvoiceError } from './invoices.js';
+import { createInvoiceService, clientIp, intEnv, InvoiceError } from './invoices.js';
 
 // Polyfill WebSocket for Node.js
 globalThis.WebSocket = WebSocket;
 
-const PORT = process.env.PORT || 3002;
+const PORT = intEnv('PORT', 3002, { min: 1 });
+const HOST = process.env.HOST?.trim() || '0.0.0.0';
 const GAME_NSEC = process.env.GAME_NSEC;
 const GAME_ID = 'space-zappers';
 const RELAYS = [
@@ -15,7 +16,7 @@ const RELAYS = [
   'wss://nos.lol',
 ];
 
-const TRUSTED_PROXY_HOPS = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? '2', 10);
+const TRUSTED_PROXY_HOPS = intEnv('TRUSTED_PROXY_HOPS', 2);
 const MAX_BODY_BYTES = 4096;
 
 // Missing GAME_NSEC disables score publishing only, so invoices keep working
@@ -42,9 +43,13 @@ if (!GAME_NSEC) {
 const invoices = createInvoiceService({
   lnbitsUrl: process.env.LNBITS_URL,
   invoiceKey: process.env.LNBITS_INVOICE_KEY,
-  minSats: Number.parseInt(process.env.INVOICE_MIN_SATS ?? '1', 10),
-  maxSats: Number.parseInt(process.env.INVOICE_MAX_SATS ?? '1000', 10),
+  minSats: intEnv('INVOICE_MIN_SATS', 21, { min: 1 }),
+  maxSats: intEnv('INVOICE_MAX_SATS', 21, { min: 1 }),
 });
+if (invoices.minSats > invoices.maxSats) {
+  console.error(`INVOICE_MIN_SATS (${invoices.minSats}) is greater than INVOICE_MAX_SATS (${invoices.maxSats})`);
+  process.exit(1);
+}
 if (!invoices.configured) {
   console.warn('LNBITS_URL / LNBITS_INVOICE_KEY not set - invoice endpoints disabled');
 }
@@ -73,14 +78,9 @@ function parseBody(req) {
   });
 }
 
-// Send JSON response
+// Send JSON response; no CORS headers, the game calls this API same-origin via nginx
 function sendJson(res, status, data) {
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  });
+  res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
 
@@ -158,18 +158,12 @@ function sendInvoiceError(res, err) {
     return;
   }
   const status = err.message === 'Invalid JSON' || err.message === 'Request body too large' ? 400 : 500;
-  if (status === 500) console.error('Invoice endpoint error:', err);
+  if (status === 500) console.error('Invoice endpoint error:', err.message);
   sendJson(res, status, { error: status === 400 ? err.message : 'Internal error' });
 }
 
 // HTTP server
 const server = http.createServer(async (req, res) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    sendJson(res, 204, {});
-    return;
-  }
-
   // Health check
   if (req.method === 'GET' && req.url === '/health') {
     sendJson(res, 200, { status: 'ok', gamePubkey, invoices: invoices.configured });
@@ -241,9 +235,9 @@ const server = http.createServer(async (req, res) => {
   sendJson(res, 404, { error: 'Not found' });
 });
 
-server.listen(PORT, () => {
-  console.log(`Score service listening on port ${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`Score service listening on ${HOST}:${PORT}`);
   console.log(`Game ID: ${GAME_ID}`);
   console.log(`Relays: ${RELAYS.join(', ')}`);
-  console.log(`Invoices: ${invoices.configured ? 'enabled' : 'disabled'}`);
+  console.log(`Invoices: ${invoices.configured ? `enabled (${invoices.minSats}-${invoices.maxSats} sats)` : 'disabled'}`);
 });

@@ -14,8 +14,8 @@ RUN npm run build
 # Production stage - Nginx + Score Service
 FROM node:20-alpine
 
-# Install nginx
-RUN apk add --no-cache nginx
+# Install nginx and tini (PID 1: forwards SIGTERM, reaps children)
+RUN apk add --no-cache nginx tini
 
 # Set up score service
 WORKDIR /score-service
@@ -44,10 +44,15 @@ RUN mkdir -p /etc/nginx/http.d && echo 'server { \
     } \
 }' > /etc/nginx/http.d/default.conf
 
-# Start script - runs both nginx and score service; LNBITS_URL, LNBITS_INVOICE_KEY and GAME_NSEC are read from the container env at runtime
-RUN printf '#!/bin/sh\ncd /score-service && node index.js &\nnginx -g "daemon off;"\n' > /start.sh && \
-    chmod +x /start.sh
+# Start script - supervises nginx and the score service (bound to 127.0.0.1); LNBITS_URL, LNBITS_INVOICE_KEY and GAME_NSEC are read from the container env at runtime
+COPY docker/start.sh /start.sh
+RUN chmod 755 /start.sh
 
 EXPOSE 80
 
+# Healthy only when nginx proxies to a score service that has invoices configured
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD wget -qO- http://127.0.0.1/api/health | grep -q '"invoices":true' || exit 1
+
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/start.sh"]

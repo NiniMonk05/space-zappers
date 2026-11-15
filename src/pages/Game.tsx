@@ -392,7 +392,7 @@ export function Game() {
 
     try {
       // Generate invoice via LNbits
-      const invoice = await createLNbitsInvoice(GAME_COST_SATS, 'Space Zappers - 21 sats to play');
+      const invoice = await createLNbitsInvoice(GAME_COST_SATS);
 
       // Try NWC first if available
       const nwcConnection = getActiveConnection();
@@ -448,7 +448,7 @@ export function Game() {
 
     try {
       // Create invoice via the score service (also starts polling for payment)
-      const invoice = await createLNbitsInvoice(GAME_COST_SATS, 'Space Zappers - 21 sats to play');
+      const invoice = await createLNbitsInvoice(GAME_COST_SATS);
 
       setLightningInvoice(invoice);
 

@@ -151,7 +151,7 @@ docker compose build space-zappers
 docker stop space-zappers && docker rm space-zappers
 docker compose up -d space-zappers
 
-# Verify score service started (should show "Score service listening on port 3002" and "Invoices: enabled")
+# Verify score service started (should show "Score service listening on 127.0.0.1:3002" and "Invoices: enabled (21-21 sats)")
 docker logs space-zappers --tail 5
 
 # Verify container is running locally (should return 200)

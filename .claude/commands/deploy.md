@@ -38,7 +38,7 @@ Check that the score service started successfully:
 ```bash
 docker logs space-zappers --tail 5
 ```
-Should show: "Score service listening on port 3002" and "Invoices: enabled"
+Should show: "Score service listening on 127.0.0.1:3002" and "Invoices: enabled (21-21 sats)". `docker ps` should report the container as `healthy` within a minute.
 
 If it shows "GAME_NSEC not set" or "LNBITS_URL / LNBITS_INVOICE_KEY not set", the `.env` file in apps-stack is missing those variables for the space-zappers service (score publishing or payments will return 503).
 

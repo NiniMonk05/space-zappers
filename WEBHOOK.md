@@ -1,5 +1,7 @@
 # LNbits Webhook Configuration
 
+> **Superseded.** This describes an older webhook + Nostr (kind 8550) payment design that the current game does not use. The score service now creates invoices and checks payment server-side (`POST /api/invoice`, `GET /api/invoice/<hash>`); see the README's "Lightning Payment Flow". Kept for reference only.
+
 This document explains how to configure the LNbits webhook for automatic payment detection in Space Zapper.
 
 ## Overview
