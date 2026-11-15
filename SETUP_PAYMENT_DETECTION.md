@@ -1,5 +1,7 @@
 # Payment Detection Setup Guide
 
+> **Superseded.** This describes an older webhook + Nostr (kind 8550) payment design that the current game does not use. The score service now creates invoices and checks payment server-side (`POST /api/invoice`, `GET /api/invoice/<hash>`); see the README's "Lightning Payment Flow". Kept for reference only.
+
 This guide will help you set up automatic payment detection for Space Zapper using LNbits webhooks and Nostr.
 
 ## How It Works

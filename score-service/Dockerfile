@@ -5,9 +5,10 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --only=production
 
-COPY index.js ./
+COPY index.js invoices.js ./
 
 ENV PORT=3002
+ENV HOST=0.0.0.0
 
 EXPOSE 3002
 

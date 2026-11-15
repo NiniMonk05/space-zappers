@@ -14,14 +14,14 @@ RUN npm run build
 # Production stage - Nginx + Score Service
 FROM node:20-alpine
 
-# Install nginx and supervisor
-RUN apk add --no-cache nginx
+# Install nginx and tini (PID 1: forwards SIGTERM, reaps children)
+RUN apk add --no-cache nginx tini
 
 # Set up score service
 WORKDIR /score-service
 COPY score-service/package*.json ./
 RUN npm ci --only=production
-COPY score-service/index.js ./
+COPY score-service/index.js score-service/invoices.js ./
 
 # Copy built game files and fix permissions
 COPY --from=builder /app/dist /usr/share/nginx/html
@@ -40,13 +40,19 @@ RUN mkdir -p /etc/nginx/http.d && echo 'server { \
         proxy_http_version 1.1; \
         proxy_set_header Host $host; \
         proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
     } \
 }' > /etc/nginx/http.d/default.conf
 
-# Start script - runs both nginx and score service
-RUN printf '#!/bin/sh\ncd /score-service && node index.js &\nnginx -g "daemon off;"\n' > /start.sh && \
-    chmod +x /start.sh
+# Start script - supervises nginx and the score service (bound to 127.0.0.1); LNBITS_URL, LNBITS_INVOICE_KEY and GAME_NSEC are read from the container env at runtime
+COPY docker/start.sh /start.sh
+RUN chmod 755 /start.sh
 
 EXPOSE 80
 
+# Healthy only when nginx proxies to a score service that has invoices configured
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD wget -qO- http://127.0.0.1/api/health | grep -q '"invoices":true' || exit 1
+
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/start.sh"]
