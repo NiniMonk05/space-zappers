@@ -66,6 +66,7 @@ export interface GameState {
   ufoSpawnCountdown: number; // Ticks until a bonus ship may appear
   playerFlashTicks: number; // Ticks left of the player-hit flash
   levelBannerTicks: number; // Ticks left of the "LEVEL n" banner
+  extraLifeAwarded: boolean; // The one extra life (at EXTRA_LIFE_SCORE) has been given
 }
 
 export type GameEndReason = 'lives' | 'invaded' | 'timeout';
@@ -87,6 +88,7 @@ export type GameEvent =
   | { type: 'playerHit'; livesLeft: number }
   | { type: 'march' }
   | { type: 'levelUp'; level: number }
+  | { type: 'extraLife'; lives: number }
   | { type: 'gameOver'; reason: GameEndReason };
 
 /** Random number source in [0, 1). Defaults to Math.random; tests pass a seeded one. */
@@ -128,6 +130,9 @@ export function msToTicks(ms: number): number {
 export const UFO_SPAWN_TICKS = msToTicks(UFO_SPAWN_INTERVAL); // 900
 export const PLAYER_FLASH_TICKS = msToTicks(500); // 30
 export const LEVEL_BANNER_TICKS = msToTicks(2000); // 120
+// One extra life when the score first reaches this: about one full level 1
+// wave (990 points) plus its bonus ships
+export const EXTRA_LIFE_SCORE = 1500;
 
 // Invader formation
 const INVADERS_PER_ROW = 11;
@@ -223,6 +228,7 @@ export function createInitialState(): GameState {
     ufoSpawnCountdown: UFO_SPAWN_TICKS,
     playerFlashTicks: 0,
     levelBannerTicks: LEVEL_BANNER_TICKS,
+    extraLifeAwarded: false,
   };
 }
 
@@ -403,6 +409,13 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
     }
     return true;
   });
+
+  // One extra life, the first time the score reaches the threshold
+  if (!state.extraLifeAwarded && state.score >= EXTRA_LIFE_SCORE) {
+    state.extraLifeAwarded = true;
+    state.player.lives++;
+    events.push({ type: 'extraLife', lives: state.player.lives });
+  }
 
   // Check bullet collisions with shields (both player and enemy bullets damage shields!)
   state.bullets = state.bullets.filter((bullet) => {
