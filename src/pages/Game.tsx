@@ -16,6 +16,7 @@ import { TouchControls } from '@/components/TouchControls';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLoginActions } from '@/hooks/useLoginActions';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useAutoPause } from '@/hooks/useAutoPause';
 import { useOrientation } from '@/hooks/useOrientation';
 import {
   DropdownMenu,
@@ -31,7 +32,8 @@ import { useNWC } from '@/hooks/useNWCContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   createInitialState,
-  endGame,
+  getTimeLeftSeconds,
+  FREE_PLAY_TICKS,
   type GameEvent,
   type GameState,
   type TickInput,
@@ -59,6 +61,7 @@ interface GameHud {
   isPaused: boolean;
   gameOver: boolean;
   levelBanner: number | null; // Level shown in the "LEVEL n" banner, or null when hidden
+  timeLeft: number | null; // Free-play seconds left, or null for a paid game
 }
 
 function hudFromState(state: GameState): GameHud {
@@ -69,12 +72,13 @@ function hudFromState(state: GameState): GameHud {
     isPaused: state.isPaused,
     gameOver: state.gameOver,
     levelBanner: state.levelBannerTicks > 0 ? state.level : null,
+    timeLeft: getTimeLeftSeconds(state),
   };
 }
 
 function sameHud(a: GameHud, b: GameHud): boolean {
   return a.score === b.score && a.level === b.level && a.lives === b.lives &&
-    a.isPaused === b.isPaused && a.gameOver === b.gameOver && a.levelBanner === b.levelBanner;
+    a.isPaused === b.isPaused && a.gameOver === b.gameOver && a.levelBanner === b.levelBanner && a.timeLeft === b.timeLeft;
 }
 
 export function Game() {
@@ -97,16 +101,13 @@ export function Game() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [isFreePlay, setIsFreePlay] = useState(false);
-  const [freePlayTimeLeft, setFreePlayTimeLeft] = useState(60);
   const [gameEndReason, setGameEndReason] = useState<'lives' | 'timeout' | null>(null);
-  const freePlayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [showLoginToSave, setShowLoginToSave] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
   const [showAddAccountDialog, setShowAddAccountDialog] = useState(false);
   const gameLoopRef = useRef<number>();
   const previousInvaderCountRef = useRef(55);
-  const isPausedRef = useRef(false);
 
   const { user, picture, name } = useCurrentUser();
   const { logout } = useLoginActions();
@@ -391,10 +392,9 @@ export function Game() {
     };
   }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, gameState.level]);
 
-  // Keep isPausedRef in sync for the free play timer
-  useEffect(() => {
-    isPausedRef.current = gameState.isPaused;
-  }, [gameState.isPaused]);
+  // Pause when the window loses focus or the tab is hidden, so nothing runs
+  // (game, free-play countdown, music) while the player is away
+  useAutoPause(hasStarted, pauseGame);
 
   // Pause game when dialogs are open (useEffect ensures fresh state, avoids stale closures)
   useEffect(() => {
@@ -584,48 +584,16 @@ export function Game() {
       setHasPaid(false);
     }
 
-    if (freeMode) {
-      setIsFreePlay(true);
-      setFreePlayTimeLeft(60);
-      // Start 1-minute countdown timer
-      if (freePlayTimerRef.current) {
-        clearInterval(freePlayTimerRef.current);
-      }
-      freePlayTimerRef.current = setInterval(() => {
-        if (isPausedRef.current) return; // Skip countdown when paused
-        setFreePlayTimeLeft((prev) => {
-          if (prev <= 1) {
-            // Time's up - end the game
-            if (freePlayTimerRef.current) {
-              clearInterval(freePlayTimerRef.current);
-              freePlayTimerRef.current = null;
-            }
-            audioEngine.stopMusic();
-            audioEngine.stopUfoSound();
-            audioEngine.playGameOver();
-            setGameEndReason('timeout');
-            endGame(stateRef.current, 'timeout');
-            drawFrame();
-            syncHud();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      setIsFreePlay(false);
-      if (freePlayTimerRef.current) {
-        clearInterval(freePlayTimerRef.current);
-        freePlayTimerRef.current = null;
-      }
-    }
+    // Free play lasts one minute of game time; the simulation ends it with a
+    // 'timeout' game-over event, and the countdown stops while paused
+    setIsFreePlay(freeMode);
 
     // Initialize audio on game start (browsers require user interaction)
     audioEngine.initialize();
     audioEngine.stopUfoSound(); // Stop any lingering UFO sound from previous game
 
     // Reset game state (the new state starts with the "LEVEL 1" banner showing)
-    stateRef.current = createInitialState();
+    stateRef.current = createInitialState({ timeLimitTicks: freeMode ? FREE_PLAY_TICKS : null });
     keysRef.current.clear();
     fireQueuedRef.current = false;
     syncHud();
@@ -970,7 +938,7 @@ export function Game() {
               <span className="text-white font-bold">{gameState.score.toString().padStart(6, '0')}</span>
               {isFreePlay && hasStarted && !gameState.gameOver && (
                 <span className="text-yellow-400 animate-pulse text-sm">
-                  FREE - {freePlayTimeLeft}s
+                  FREE - {gameState.timeLeft ?? 0}s
                 </span>
               )}
             </div>
@@ -1051,10 +1019,6 @@ export function Game() {
                     setHasStarted(false);
                     stateRef.current = createInitialState();
                     syncHud();
-                    if (freePlayTimerRef.current) {
-                      clearInterval(freePlayTimerRef.current);
-                      freePlayTimerRef.current = null;
-                    }
                   }}
                   variant="outline"
                   className="border-red-500 text-red-500 hover:bg-red-500 hover:text-black text-lg px-8 py-4"
