@@ -494,7 +494,7 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
     if (!state.bonusUFO && state.levelTransition) {
       state.level++;
       state.invaders = createInvaders(state.level);
-      // Shields persist across levels (like the original arcade game)
+      state.shields = createShields(); // Each wave starts with whole shields
       state.marchIntervalTicks = getMarchIntervalTicks(INVADERS_PER_ROW * INVADER_ROWS); // Reset to base speed each level (like original)
       state.levelTransition = false;
       state.ufoSpawnCountdown = UFO_SPAWN_TICKS;
