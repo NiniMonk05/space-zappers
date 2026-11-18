@@ -114,6 +114,7 @@ export const UFO_WIDTH = 48;
 export const UFO_HEIGHT = 24;
 export const BASE_FIRE_COOLDOWN = 500; // ms between shots at level 1
 export const MIN_FIRE_COOLDOWN = 150; // minimum cooldown at high levels
+export const MAX_ENEMY_BOMBS = 3; // Most enemy bombs falling at once
 
 // Simulation timing. The game advances in fixed ticks of 1/60 s whatever the
 // display refresh rate, so speeds above are in pixels per tick.
@@ -453,12 +454,13 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
     events.push({ type: 'march' });
   }
 
-  // Random invader shooting (more frequent at higher levels)
+  // Random invader shooting (more frequent at higher levels). Only the front
+  // rank fires, and only while fewer than MAX_ENEMY_BOMBS bombs are falling.
   const shootChance = 0.015 + (state.level - 1) * 0.003;
-  if (rng() < shootChance) {
-    const aliveInvaders = state.invaders.filter((inv) => inv.isAlive);
-    if (aliveInvaders.length > 0) {
-      const shooter = aliveInvaders[Math.floor(rng() * aliveInvaders.length)];
+  if (rng() < shootChance && countBombs(state) < MAX_ENEMY_BOMBS) {
+    const shooters = getFrontRank(state.invaders);
+    if (shooters.length > 0) {
+      const shooter = shooters[Math.floor(rng() * shooters.length)];
       state.bullets.push({
         x: shooter.x + shooter.width / 2 - BULLET_WIDTH / 2,
         y: shooter.y + shooter.height,
@@ -561,6 +563,26 @@ function moveInvaders(
   });
 
   return { invaders: newInvaders, direction, shouldMoveDown };
+}
+
+/** Enemy bombs currently falling. */
+export function countBombs(state: GameState): number {
+  return state.bullets.filter((b) => b.direction === 'down').length;
+}
+
+/**
+ * The invaders allowed to fire: the lowest alive invader in each column, so
+ * bombs never start behind (and fall through) the invaders below them.
+ * A column is the set of invaders sharing an x position (the formation moves as one).
+ */
+export function getFrontRank(invaders: Invader[]): Invader[] {
+  const lowestByColumn = new Map<number, Invader>();
+  for (const invader of invaders) {
+    if (!invader.isAlive) continue;
+    const lowest = lowestByColumn.get(invader.x);
+    if (!lowest || invader.y > lowest.y) lowestByColumn.set(invader.x, invader);
+  }
+  return [...lowestByColumn.values()];
 }
 
 /** Fire a player shot if the cooldown has passed and no shot is in flight. */
