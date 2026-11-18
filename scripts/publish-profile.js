@@ -25,7 +25,7 @@ const RELAYS = [
 const PROFILE = {
   name: 'Space Zappers',
   picture: 'https://www.spacezappers.com/apple-touch-icon.png',
-  about: 'A retro Space Invaders arcade game. Pay 21 sats to play. Publish your high scores to the decentralized Nostr leaderboard.',
+  about: 'A retro fixed-shooter arcade game. Pay 21 sats to play. Publish your high scores to the decentralized Nostr leaderboard.',
   website: 'https://www.spacezappers.com',
   lud16: 'space.zappers@bank.weeksfamily.me',
 };

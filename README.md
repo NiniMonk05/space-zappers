@@ -1,6 +1,6 @@
 # Space Zappers
 
-A retro Space Invaders arcade game powered by Bitcoin Lightning and Nostr.
+A retro fixed-shooter arcade game powered by Bitcoin Lightning and Nostr.
 
 Pay 21 sats to play. Publish your high scores to the decentralized leaderboard.
 
@@ -8,7 +8,7 @@ Pay 21 sats to play. Publish your high scores to the decentralized leaderboard.
 
 ## Features
 
-- **Classic Arcade Gameplay** - Authentic Space Invaders mechanics with pixel art graphics and CRT screen effects
+- **Retro Arcade Gameplay** - Fixed-shooter action with pixel art graphics and CRT screen effects
 - **Lightning Payments** - Pay 21 sats per game via any Lightning wallet
 - **Nostr Leaderboard** - Scores published to Nostr for a censorship-resistant, decentralized high score table
 - **Retro Audio** - Chiptune-style music that speeds up as you eliminate invaders

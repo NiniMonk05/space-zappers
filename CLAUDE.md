@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Space Zappers is a browser-based Space Invaders game built with React, TypeScript, and Nostr integration. Players pay 21 sats via Lightning to play, with scores published to Nostr for a decentralized leaderboard.
+Space Zappers is a browser-based retro fixed-shooter arcade game built with React, TypeScript, and Nostr integration. Players pay 21 sats via Lightning to play, with scores published to Nostr for a decentralized leaderboard.
 
 ## Tech Stack
 
