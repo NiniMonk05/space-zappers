@@ -1,6 +1,8 @@
 /**
  * Space Zappers Game Engine
- * Classic Space Invaders gameplay with modern TypeScript
+ * Game state, movement, collision detection and wave progression for a
+ * fixed-shooter: a formation of enemies marches down while the player
+ * shoots from the bottom.
  */
 
 export interface GameObject {
@@ -78,7 +80,7 @@ export const PLAYER_SPEED = 5;
 export const BULLET_SPEED = 8;
 export const BASE_BOMB_SPEED = 2; // Base speed for enemy bombs
 export const INITIAL_INVADER_SPEED = 1000; // milliseconds between moves
-export const MIN_INVADER_SPEED = 35; // Very fast for last few aliens (like original arcade)
+export const MIN_INVADER_SPEED = 35; // Fastest march interval, reached when only a few aliens remain
 export const UFO_SPAWN_INTERVAL = 15000; // 15 seconds
 export const UFO_SPEED = 2;
 export const UFO_WIDTH = 48;
@@ -110,7 +112,7 @@ export function getBombSpeed(level: number): number {
 // Level-based alien color schemes
 export function getAlienColors(level: number): { squid: string; crab: string; octopus: string } {
   const schemes = [
-    { squid: '#ff0000', crab: '#ffffff', octopus: '#00ffff' }, // Classic
+    { squid: '#ff0000', crab: '#ffffff', octopus: '#00ffff' }, // Red / white / cyan (level 1)
     { squid: '#ff00ff', crab: '#ffff00', octopus: '#00ff00' }, // Neon
     { squid: '#ff6600', crab: '#ff0066', octopus: '#6600ff' }, // Sunset
     { squid: '#00ff66', crab: '#0066ff', octopus: '#ff0066' }, // Cyber
@@ -349,7 +351,7 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
       newState.invaderDirection = direction;
     }
 
-    // Increase speed as invaders are destroyed (exponential curve like original arcade)
+    // March faster as invaders are destroyed: interval scales with (alive/total)^1.5
     const aliveCount = newState.invaders.filter((inv) => inv.isAlive).length;
     const totalInvaders = INVADERS_PER_ROW * INVADER_ROWS;
     // Exponential curve: speed increases dramatically as fewer aliens remain
@@ -402,8 +404,8 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
     if (!newState.bonusUFO && newState.levelTransition) {
       newState.level++;
       newState.invaders = createInvaders(newState.level);
-      // Shields persist across levels (like the original arcade game)
-      newState.invaderSpeed = INITIAL_INVADER_SPEED; // Reset to base speed each level (like original)
+      // Shields are not rebuilt: damage carries over into the next wave
+      newState.invaderSpeed = INITIAL_INVADER_SPEED; // Each new wave starts at the base march interval
       newState.levelTransition = false;
       newState.nextUFOSpawn = now + UFO_SPAWN_INTERVAL;
     }
@@ -478,7 +480,7 @@ export function shootBullet(state: GameState): GameState {
     return state;
   }
 
-  // Only one bullet at a time from player (classic mode)
+  // Only one player shot can be on screen at a time
   const playerBulletExists = state.bullets.some((b) => b.direction === 'up');
   if (playerBulletExists) return state;
 
@@ -572,7 +574,7 @@ function damageShield(shield: Shield, bullet: Bullet): void {
     ? Math.floor((bullet.y - shield.y) / (shield.height / 15))
     : Math.floor((bullet.y + BULLET_HEIGHT - shield.y) / (shield.height / 15));
 
-  // Damage a small area around the impact point (like original arcade)
+  // Clear a 3x3 block of cells around the impact point
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
       const mapX = Math.max(0, Math.min(19, relativeX + dx));
