@@ -5,7 +5,8 @@ interface TouchControlsProps {
   onLeftEnd: () => void;
   onRightStart: () => void;
   onRightEnd: () => void;
-  onFire: () => void;
+  onFire: () => void; // Fire pressed (and held until onFireEnd)
+  onFireEnd?: () => void; // Fire released
   onPause?: () => void;
   sideMargin?: number;
 }
@@ -16,6 +17,7 @@ export function TouchControls({
   onRightStart,
   onRightEnd,
   onFire,
+  onFireEnd,
   onPause,
   sideMargin = 0,
 }: TouchControlsProps) {
@@ -74,6 +76,8 @@ export function TouchControls({
           <button
             className="w-20 h-20 bg-red-500/40 border-2 border-red-500 rounded-full flex items-center justify-center active:bg-red-500/70 touch-none select-none"
             onTouchStart={(e) => { e.preventDefault(); onFire(); }}
+            onTouchEnd={(e) => { e.preventDefault(); onFireEnd?.(); }}
+            onTouchCancel={(e) => { e.preventDefault(); onFireEnd?.(); }}
           >
             <Crosshair className="w-10 h-10 text-red-400" />
           </button>
