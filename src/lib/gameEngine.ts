@@ -36,6 +36,15 @@ export interface BonusUFO extends GameObject {
   color: string;
 }
 
+/** The points of a bonus ship that was just shot, shown briefly where it was hit. */
+export interface UfoScorePopup {
+  x: number;
+  y: number;
+  points: number;
+  color: string;
+  ticksLeft: number;
+}
+
 // UFO types with colors and point values
 export const UFO_TYPES = [
   { points: 50, color: '#00ffff' },   // Cyan - common
@@ -50,6 +59,7 @@ export interface GameState {
   bullets: Bullet[];
   shields: Shield[];
   bonusUFO: BonusUFO | null;
+  ufoScorePopup: UfoScorePopup | null; // Points of the bonus ship just shot, shown where it was hit
   score: number;
   level: number;
   gameOver: boolean;
@@ -128,6 +138,8 @@ export function msToTicks(ms: number): number {
 export const UFO_SPAWN_TICKS = msToTicks(UFO_SPAWN_INTERVAL); // 900
 export const PLAYER_FLASH_TICKS = msToTicks(500); // 30
 export const LEVEL_BANNER_TICKS = msToTicks(2000); // 120
+export const UFO_SCORE_POPUP_TICKS = msToTicks(1000); // 60: how long a shot bonus ship's points show
+export const UFO_MIN_INVADERS_ALIVE = 8; // No random bonus ship once fewer invaders than this remain
 
 // Invader formation
 const INVADERS_PER_ROW = 11;
@@ -208,6 +220,7 @@ export function createInitialState(): GameState {
     bullets: [],
     shields: createShields(),
     bonusUFO: null,
+    ufoScorePopup: null,
     score: 0,
     level: 1,
     gameOver: false,
@@ -317,6 +330,7 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
   if (state.ufoSpawnCountdown > 0) state.ufoSpawnCountdown--;
   if (state.playerFlashTicks > 0) state.playerFlashTicks--;
   if (state.levelBannerTicks > 0) state.levelBannerTicks--;
+  if (state.ufoScorePopup && --state.ufoScorePopup.ticksLeft <= 0) state.ufoScorePopup = null;
 
   const bombSpeed = getBombSpeed(state.level);
   const player = state.player;
@@ -340,8 +354,13 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
   }
   state.bullets = state.bullets.filter((bullet) => bullet.y > 0 && bullet.y < GAME_HEIGHT);
 
-  // Spawn bonus UFO randomly during gameplay
-  if (!state.bonusUFO && state.ufoSpawnCountdown <= 0 && rng() < 0.3) {
+  // Spawn bonus UFO randomly during gameplay, but not when only a few invaders are left
+  if (
+    !state.bonusUFO &&
+    state.ufoSpawnCountdown <= 0 &&
+    state.invaders.filter((inv) => inv.isAlive).length >= UFO_MIN_INVADERS_ALIVE &&
+    rng() < 0.3
+  ) {
     const direction = rng() < 0.5 ? 1 : -1;
     const ufoType = UFO_TYPES[Math.floor(rng() * UFO_TYPES.length)];
     state.bonusUFO = {
@@ -378,6 +397,13 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
 
     if (checkCollision(bullet, ufo)) {
       state.score += ufo.points;
+      state.ufoScorePopup = {
+        x: ufo.x,
+        y: ufo.y,
+        points: ufo.points,
+        color: ufo.color,
+        ticksLeft: UFO_SCORE_POPUP_TICKS,
+      };
       state.bonusUFO = null;
       state.ufoSpawnCountdown = UFO_SPAWN_TICKS;
       state.ufoSoundPlaying = false;

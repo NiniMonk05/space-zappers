@@ -41,6 +41,12 @@ export function drawGame(ctx: CanvasRenderingContext2D, gameState: GameState) {
     drawUFO(ctx, gameState.bonusUFO.x, gameState.bonusUFO.y, gameState.bonusUFO.points, gameState.bonusUFO.color);
   }
 
+  // A shot bonus ship's value shows only once it is hit, briefly, where it was
+  const popup = gameState.ufoScorePopup;
+  if (popup) {
+    drawUfoScore(ctx, popup.x, popup.y, popup.points, popup.color);
+  }
+
   // Draw invaders with level-based colors
   for (const invader of gameState.invaders) {
     if (invader.isAlive) {
@@ -249,12 +255,15 @@ function drawUFO(ctx: CanvasRenderingContext2D, x: number, y: number, points: nu
   }
 
   drawPixelArt(ctx, x, y, pixels, 2.4);
+}
 
-  // Draw points indicator - color matches UFO
+// Draw the points of a bonus ship that was just shot, where it was hit.
+// Same text style and colour the ship's value used to be drawn in while it flew.
+function drawUfoScore(ctx: CanvasRenderingContext2D, x: number, y: number, points: number, color: string) {
   ctx.fillStyle = color;
   ctx.font = 'bold 18px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(`${points}`, x + 24, y - 10);
+  ctx.fillText(`${points}`, x + 24, y + 18);
 }
 
 // Draw shield - flat bottom, solid, symmetrical (pixel damage only)
