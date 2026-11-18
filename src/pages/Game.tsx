@@ -37,6 +37,8 @@ import {
   type TickInput,
 } from '@/lib/gameEngine';
 import { advanceFrame, createFixedStepClock } from '@/lib/gameLoop';
+import { interpretKeyDown, isLeftHeld, isRightHeld, type GamePhase } from '@/lib/input';
+import { useReleaseKeysOnBlur } from '@/hooks/useReleaseKeysOnBlur';
 import { audioEngine } from '@/lib/audioEngine';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useInvoicePayment } from '@/hooks/useInvoicePayment';
@@ -253,6 +255,7 @@ export function Game() {
     if (state.gameOver || state.isPaused) return;
     state.isPaused = true;
     fireQueuedRef.current = false;
+    keysRef.current.clear(); // Keys released while paused send no key-up to us
     audioEngine.stopMusic();
     audioEngine.stopUfoSound();
     syncHud();
@@ -276,6 +279,9 @@ export function Game() {
     syncHud();
   }, [isMuted, syncHud]);
 
+  // A key released while the window is unfocused never sends key-up
+  useReleaseKeysOnBlur(keysRef);
+
   // Handle keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -287,31 +293,31 @@ export function Game() {
         return;
       }
 
-      // Any key unpauses the game
-      if (hasStarted && gameState.isPaused && !gameState.gameOver) {
-        e.preventDefault();
-        resumeGame();
-        return;
-      }
+      const phase: GamePhase = !hasStarted || gameState.gameOver
+        ? 'inactive'
+        : gameState.isPaused ? 'paused' : 'playing';
+      const { action, preventDefault } = interpretKeyDown(e, phase);
+      if (preventDefault) e.preventDefault();
 
-      if (['ArrowLeft', 'ArrowRight', 'a', 'd', ' ', 'Escape'].includes(e.key)) {
-        e.preventDefault();
-        keysRef.current.add(e.key);
-
-        // Escape key pauses the game and music
-        if (e.key === 'Escape' && hasStarted && !gameState.gameOver && !gameState.isPaused) {
-          pauseGame();
-        }
-
-        // Space requests a shot; the next tick fires it if the cooldown allows
-        if (e.key === ' ' && hasStarted && !gameState.gameOver && !gameState.isPaused) {
+      switch (action) {
+        case 'move':
+          keysRef.current.add(e.code);
+          break;
+        case 'fire':
+          // The next tick fires it if the cooldown allows
           fireQueuedRef.current = true;
-        }
+          break;
+        case 'pause':
+          pauseGame();
+          break;
+        case 'resume':
+          resumeGame();
+          break;
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      keysRef.current.delete(e.key);
+      keysRef.current.delete(e.code);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -342,8 +348,8 @@ export function Game() {
       const fire = fireQueuedRef.current;
       fireQueuedRef.current = false;
       return {
-        left: keys.has('ArrowLeft') || keys.has('a'),
-        right: keys.has('ArrowRight') || keys.has('d'),
+        left: isLeftHeld(keys),
+        right: isRightHeld(keys),
         fire,
       };
     };
@@ -1041,7 +1047,7 @@ export function Game() {
                   PAUSED
                 </div>
                 <div className="text-2xl text-green-400 mb-4">
-                  {isMobile ? 'TAP TO CONTINUE' : 'PRESS ANY KEY TO CONTINUE'}
+                  {isMobile ? 'TAP TO CONTINUE' : 'PRESS ESC OR ENTER TO CONTINUE'}
                 </div>
                 <Button
                   onClick={(e) => {
