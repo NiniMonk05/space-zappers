@@ -244,14 +244,16 @@ class AudioEngine {
     const level = this.currentLevel;
     const beatInPattern = beatIndex % 4;
 
-    // Classic Space Invaders style: 4 descending notes (like the original!)
-    // But we add level-based variations to keep it interesting
-    const classicBass = [
-      [147, 139, 131, 123],  // Level 1: D3, Db3, C3, B2 - classic descent
-      [139, 131, 123, 117],  // Level 2: Db3, C3, B2, Bb2 - lower
-      [131, 123, 117, 110],  // Level 3: C3, B2, Bb2, A2 - even lower
-      [123, 117, 110, 104],  // Level 4: B2, Bb2, A2, Ab2 - doom
-      [110, 104, 98, 92],    // Level 5+: A2, Ab2, G2, Gb2 - maximum dread
+    // Space Zappers step motif: six steps that climb a minor triad, fall back
+    // and drop to the fifth below (semitones above the level's root note).
+    // The root sinks each level so the march feels heavier as you progress.
+    const motifSteps = [0, 3, 7, 3, 0, -5];
+    const motifRoots = [
+      147,  // Level 1: D3
+      139,  // Level 2: Db3
+      131,  // Level 3: C3
+      123,  // Level 4: B2
+      110,  // Level 5+: A2
     ];
 
     // Melodic hooks per level (plays on top of bass every 8 beats)
@@ -263,10 +265,11 @@ class AudioEngine {
       [349, 330, 294, 277, 247, 233, 220, 196],  // Level 5+: Low rumble melody
     ];
 
-    const patternIndex = Math.min(level - 1, classicBass.length - 1);
+    const patternIndex = Math.min(level - 1, motifRoots.length - 1);
 
-    // === BASS LINE (the iconic 4-note pattern) ===
-    const bassNote = classicBass[patternIndex][beatInPattern];
+    // === BASS LINE (the six-step motif, one note per step) ===
+    const step = motifSteps[beatIndex % motifSteps.length];
+    const bassNote = motifRoots[patternIndex] * Math.pow(2, step / 12);
     this.createOscillator(bassNote, 0.18, 'square');
 
     // Sub-bass for weight
@@ -375,7 +378,7 @@ class AudioEngine {
     }
   }
 
-  // Classic UFO bleeping sound from original Space Invaders
+  // Repeating bleep while a bonus ship crosses the screen
   startUfoSound() {
     if (this.isUfoPlaying || this.isMuted) return;
 
@@ -385,7 +388,7 @@ class AudioEngine {
     const playUfoBleep = () => {
       if (!this.isUfoPlaying || !this.context || this.isMuted) return;
 
-      // Two-tone UFO bleep like the original
+      // Two-tone bleep (400 Hz then 500 Hz)
       const osc1 = this.context.createOscillator();
       const gain1 = this.context.createGain();
       osc1.connect(gain1);
