@@ -105,7 +105,8 @@ export const SHIELD_WIDTH = 160;
 export const SHIELD_HEIGHT = 60;
 export const PLAYER_SPEED = 5;
 export const BULLET_SPEED = 8;
-export const BASE_BOMB_SPEED = 2; // Base speed for enemy bombs
+export const BASE_BOMB_SPEED = 3; // Enemy bomb speed at level 1 (px per tick)
+export const MAX_BOMB_SPEED = 6; // Fastest enemy bomb, kept below BULLET_SPEED
 export const INITIAL_INVADER_SPEED = 1000; // milliseconds between moves
 export const MIN_INVADER_SPEED = 35; // Very fast for last few aliens (like original arcade)
 export const UFO_SPAWN_INTERVAL = 15000; // 15 seconds
@@ -173,12 +174,13 @@ export function createSeededRng(seed: number): Rng {
   };
 }
 
-// Get bomb speed based on level (slower at level 1, faster each level)
+/**
+ * Enemy bomb speed in whole pixels per tick: 3 at level 1 (3/8 of the
+ * player's shot speed), one faster every second level, capped at 6 so a bomb
+ * is always slower than the player's shot.
+ */
 export function getBombSpeed(level: number): number {
-  if (level === 1) {
-    return BASE_BOMB_SPEED * 0.5; // 50% slower on level 1
-  }
-  return BASE_BOMB_SPEED + (level - 2) * 0.3; // Increase speed each level after 1
+  return Math.min(MAX_BOMB_SPEED, BASE_BOMB_SPEED + Math.floor(Math.max(1, level) / 2));
 }
 
 // Level-based alien color schemes
