@@ -112,8 +112,6 @@ export const UFO_SPAWN_INTERVAL = 15000; // 15 seconds
 export const UFO_SPEED = 2;
 export const UFO_WIDTH = 48;
 export const UFO_HEIGHT = 24;
-export const BASE_FIRE_COOLDOWN = 500; // ms between shots at level 1
-export const MIN_FIRE_COOLDOWN = 150; // minimum cooldown at high levels
 
 // Simulation timing. The game advances in fixed ticks of 1/60 s whatever the
 // display refresh rate, so speeds above are in pixels per tick.
@@ -136,15 +134,6 @@ const INVADER_SPACING_X = 50;
 const INVADER_SPACING_Y = 45;
 const INVADER_START_X = 100;
 const INVADER_START_Y = 100;
-
-// Get fire cooldown based on level (faster shooting at higher levels)
-export function getFireCooldown(level: number): number {
-  return Math.max(MIN_FIRE_COOLDOWN, BASE_FIRE_COOLDOWN - (level - 1) * 50);
-}
-
-export function getFireCooldownTicks(level: number): number {
-  return msToTicks(getFireCooldown(level));
-}
 
 /** March interval in ms: 1000 ms x (alive/55)^1.5, floored at 35 ms. */
 export function getMarchIntervalMs(aliveCount: number): number {
@@ -563,13 +552,8 @@ function moveInvaders(
   return { invaders: newInvaders, direction, shouldMoveDown };
 }
 
-/** Fire a player shot if the cooldown has passed and no shot is in flight. */
+/** Fire a player shot unless one is already in flight (one shot on screen at a time). */
 function tryShoot(state: GameState): boolean {
-  if (state.tick - state.player.lastShotTick < getFireCooldownTicks(state.level)) {
-    return false;
-  }
-
-  // Only one bullet at a time from player (classic mode)
   if (state.bullets.some((b) => b.direction === 'up')) return false;
 
   state.player.lastShotTick = state.tick;

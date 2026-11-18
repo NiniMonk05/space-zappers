@@ -5,7 +5,6 @@ import {
   tickGame,
   getMarchIntervalMs,
   getMarchIntervalTicks,
-  getFireCooldownTicks,
   PLAYER_SPEED,
   TICK_MS,
   UFO_SPAWN_TICKS,
@@ -26,6 +25,7 @@ function scriptedInput(state: GameState) {
 // Feed `seconds` of frames at `hz` and return the final state
 function simulate(hz: number, seconds: number, seed = 1234): { state: GameState; ticks: number } {
   const state = createInitialState();
+  state.player.lives = 99; // The scripted player must survive the whole run, whatever the gameplay rules
   const clock = createFixedStepClock();
   const rng = createSeededRng(seed);
   const input = scriptedInput(state);
@@ -144,18 +144,30 @@ describe('tick-based timers match the old 60 Hz behaviour', () => {
     expect(state.invaders[0].x).toBe(startX + 10);
   });
 
-  it('fire cooldown is 500 ms (30 ticks) at level 1', () => {
-    expect(getFireCooldownTicks(1)).toBe(30);
-    expect(getFireCooldownTicks(20)).toBe(9); // 150 ms floor
+  it('has no fire cooldown: only the one shot on screen limits firing', () => {
     const state = createInitialState();
     const fire = { left: false, right: false, fire: true };
     const shotTicks: number[] = [];
-    for (let i = 0; i < 200; i++) {
-      // Clear the shot in flight so only the cooldown limits firing
+    for (let i = 0; i < 4; i++) {
+      // Clear the shot in flight, so a new one may fire straight away
       state.bullets = state.bullets.filter((b) => b.direction !== 'up');
       if (tickGame(state, fire, () => 0.99).some((e) => e.type === 'shot')) shotTicks.push(state.tick);
     }
-    expect(shotTicks.slice(0, 4)).toEqual([1, 31, 61, 91]);
+    expect(shotTicks).toEqual([1, 2, 3, 4]);
+  });
+
+  it('cannot fire while its shot is still on screen, and fires on the tick it leaves', () => {
+    const state = createInitialState();
+    state.player.x = 0; // Fire up the empty left edge, clear of shields and invaders
+    const fire = { left: false, right: false, fire: true };
+    const shotTicks: number[] = [];
+    for (let i = 0; i < 200; i++) {
+      if (tickGame(state, fire, () => 0.99).some((e) => e.type === 'shot')) shotTicks.push(state.tick);
+      expect(state.bullets.filter((b) => b.direction === 'up').length).toBeLessThanOrEqual(1);
+    }
+    // The shot starts at y = 514 and moves 8 px per tick: it leaves the top
+    // during tick 65, and the next shot fires on tick 66
+    expect(shotTicks.slice(0, 3)).toEqual([1, 66, 131]);
   });
 });
 
