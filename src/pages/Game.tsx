@@ -38,6 +38,7 @@ import {
 } from '@/lib/gameEngine';
 import { advanceFrame, createFixedStepClock } from '@/lib/gameLoop';
 import { audioEngine } from '@/lib/audioEngine';
+import { loadHiScore, saveHiScore } from '@/lib/hiScore';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useInvoicePayment } from '@/hooks/useInvoicePayment';
 import QRCode from 'qrcode';
@@ -87,6 +88,7 @@ export function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clockRef = useRef(createFixedStepClock());
   const [isMuted, setIsMuted] = useState(false);
+  const [hiScore, setHiScore] = useState(loadHiScore); // Best score on this device
   const [hasStarted, setHasStarted] = useState(false);
   const [hasPaid, setHasPaid] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
@@ -217,6 +219,9 @@ export function Game() {
         case 'levelUp':
           audioEngine.playLevelUp();
           audioEngine.setLevel(event.level);
+          break;
+        case 'extraLife':
+          audioEngine.playLevelUp();
           break;
         case 'gameOver': {
           audioEngine.playGameOver();
@@ -390,6 +395,13 @@ export function Game() {
       audioEngine.stopMusic();
     };
   }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, gameState.level]);
+
+  // Record a new best score on this device when a game ends (any way it ends)
+  useEffect(() => {
+    if (gameState.gameOver && gameState.score > hiScore) {
+      setHiScore(saveHiScore(gameState.score));
+    }
+  }, [gameState.gameOver, gameState.score, hiScore]);
 
   // Keep isPausedRef in sync for the free play timer
   useEffect(() => {
@@ -979,6 +991,8 @@ export function Game() {
               <TankLives lives={gameState.lives} />
             </div>
             <div className="flex-1 flex items-center justify-end gap-2">
+              <span className="text-green-400">HI-SCORE</span>
+              <span className="text-white font-bold mr-4">{Math.max(hiScore, gameState.score).toString().padStart(6, '0')}</span>
               <span className="text-green-400">LEVEL</span>
               <span className="text-white font-bold">{gameState.level}</span>
             </div>
