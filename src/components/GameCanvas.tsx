@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import type { GameState } from '@/lib/gameEngine';
-import { getAlienColors } from '@/lib/gameEngine';
+import type { GameState, Shield } from '@/lib/gameEngine';
+import { getAlienColors, isShieldCellSolid, SHIELD_COLS, SHIELD_ROWS, SHIELD_CELL_WIDTH, SHIELD_CELL_HEIGHT } from '@/lib/gameEngine';
 
 interface GameCanvasProps {
   gameState: GameState;
@@ -27,7 +27,7 @@ export function GameCanvas({ gameState, playerFlashing = false }: GameCanvasProp
     // Draw shields (flat bottom, solid, symmetrical)
     for (const shield of gameState.shields) {
       if (shield.isAlive) {
-        drawShield(ctx, shield.x, shield.y, shield.width, shield.height, shield.damageMap);
+        drawShield(ctx, shield);
       }
     }
 
@@ -263,55 +263,19 @@ function drawUFO(ctx: CanvasRenderingContext2D, x: number, y: number, points: nu
   ctx.fillText(`${points}`, x + 24, y - 10);
 }
 
-// Draw shield - flat bottom, solid, symmetrical (pixel damage only)
-function drawShield(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  damageMap: boolean[][]
-) {
+// Draw shield - flat bottom, solid, symmetrical (pixel damage only).
+// Uses the same cell grid as the collision code in gameEngine.ts.
+function drawShield(ctx: CanvasRenderingContext2D, shield: Shield) {
   ctx.fillStyle = '#00ff00'; // Solid green, no fading
 
-  // Classic shield shape - flat bottom, solid, symmetrical with cutout for tank
-  const shieldShape = [
-    '    ████████████    ',
-    '  ████████████████  ',
-    '████████████████████',
-    '████████████████████',
-    '████████████████████',
-    '████████████████████',
-    '████████████████████',
-    '████████████████████',
-    '████████████████████',
-    '████████████████████',
-    '████████████████████',
-    '██████        ██████',
-    '████            ████',
-    '████            ████',
-    '████            ████',
-  ];
-
-  const pixelWidth = width / 20;
-  const pixelHeight = height / 15;
-
-  for (let row = 0; row < shieldShape.length; row++) {
-    const line = shieldShape[row];
-    for (let col = 0; col < line.length; col += 2) {
-      const char = line.substring(col, col + 2);
-      if (char === '██') {
-        // Check if this pixel is damaged
-        const mapX = Math.floor(col / 2);
-        const mapY = row;
-        if (damageMap[mapY] && damageMap[mapY][mapX]) {
-          continue; // Skip damaged pixels
-        }
+  for (let row = 0; row < SHIELD_ROWS; row++) {
+    for (let col = 0; col < SHIELD_COLS; col++) {
+      if (isShieldCellSolid(shield, row, col)) {
         ctx.fillRect(
-          x + (col / 2) * pixelWidth,
-          y + row * pixelHeight,
-          pixelWidth + 0.5, // Slight overlap to prevent gaps
-          pixelHeight + 0.5
+          shield.x + col * SHIELD_CELL_WIDTH,
+          shield.y + row * SHIELD_CELL_HEIGHT,
+          SHIELD_CELL_WIDTH,
+          SHIELD_CELL_HEIGHT
         );
       }
     }

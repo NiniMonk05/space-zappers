@@ -72,8 +72,15 @@ export const INVADER_WIDTH = 32;
 export const INVADER_HEIGHT = 32;
 export const BULLET_WIDTH = 6;
 export const BULLET_HEIGHT = 16;
-export const SHIELD_WIDTH = 160;
-export const SHIELD_HEIGHT = 60;
+// Shields are a grid of SHIELD_COLS x SHIELD_ROWS cells. Layout, drawing and
+// collision all use these constants so the shield is where it is drawn.
+export const SHIELD_COLS = 10;
+export const SHIELD_ROWS = 15;
+export const SHIELD_CELL_WIDTH = 8;
+export const SHIELD_CELL_HEIGHT = 4;
+export const SHIELD_WIDTH = SHIELD_COLS * SHIELD_CELL_WIDTH; // 80
+export const SHIELD_HEIGHT = SHIELD_ROWS * SHIELD_CELL_HEIGHT; // 60
+export const SHIELD_COUNT = 4;
 export const PLAYER_SPEED = 5;
 export const BULLET_SPEED = 8;
 export const BASE_BOMB_SPEED = 2; // Base speed for enemy bombs
@@ -185,19 +192,19 @@ function createInvaders(level: number): Invader[] {
 
 function createShields(): Shield[] {
   const shields: Shield[] = [];
-  const shieldCount = 4;
-  const spacing = GAME_WIDTH / (shieldCount + 1);
+  // Shield centres are evenly spaced, so the row is centred on the screen
+  const spacing = GAME_WIDTH / (SHIELD_COUNT + 1);
 
-  // Create shield damage map (20x15 pixels for classic shield shape)
+  // One damage flag per shield cell
   const createDamageMap = (): boolean[][] => {
     const map: boolean[][] = [];
-    for (let i = 0; i < 15; i++) {
-      map.push(new Array(20).fill(false));
+    for (let i = 0; i < SHIELD_ROWS; i++) {
+      map.push(new Array(SHIELD_COLS).fill(false));
     }
     return map;
   };
 
-  for (let i = 0; i < shieldCount; i++) {
+  for (let i = 0; i < SHIELD_COUNT; i++) {
     shields.push({
       x: spacing * (i + 1) - SHIELD_WIDTH / 2,
       y: GAME_HEIGHT - 160,
@@ -511,8 +518,9 @@ function checkCollision(obj1: GameObject, obj2: GameObject): boolean {
   );
 }
 
-// Shield shape for collision detection (matching the visual shape)
-const SHIELD_SHAPE = [
+// Shield shape: each '██' pair is one cell (SHIELD_COLS x SHIELD_ROWS).
+// Used by both collision and drawing.
+const SHIELD_ART = [
   '    ████████████    ',
   '  ████████████████  ',
   '████████████████████',
@@ -530,8 +538,22 @@ const SHIELD_SHAPE = [
   '████            ████',
 ];
 
+export const SHIELD_SHAPE: boolean[][] = SHIELD_ART.map((line) => {
+  const cells: boolean[] = [];
+  for (let col = 0; col < SHIELD_COLS; col++) {
+    cells.push(line.substring(col * 2, col * 2 + 2) === '██');
+  }
+  return cells;
+});
+
+// True if the shield cell is part of the shape and has not been destroyed
+export function isShieldCellSolid(shield: Shield, row: number, col: number): boolean {
+  if (row < 0 || row >= SHIELD_ROWS || col < 0 || col >= SHIELD_COLS) return false;
+  return SHIELD_SHAPE[row][col] && !shield.damageMap[row]?.[col];
+}
+
 // Check if bullet collides with shield's actual shape (not just bounding box)
-function checkShieldCollision(bullet: Bullet, shield: Shield): boolean {
+export function checkShieldCollision(bullet: Bullet, shield: Shield): boolean {
   // First, quick bounding box check
   if (!checkCollision(bullet, shield)) {
     return false;
@@ -542,41 +564,24 @@ function checkShieldCollision(bullet: Bullet, shield: Shield): boolean {
   const bulletY = bullet.direction === 'down' ? bullet.y : bullet.y + bullet.height;
 
   // Convert to shield grid coordinates
-  const gridX = Math.floor((bulletCenterX - shield.x) / (shield.width / 20));
-  const gridY = Math.floor((bulletY - shield.y) / (shield.height / 15));
+  const gridX = Math.floor((bulletCenterX - shield.x) / SHIELD_CELL_WIDTH);
+  const gridY = Math.floor((bulletY - shield.y) / SHIELD_CELL_HEIGHT);
 
-  // Check bounds
-  if (gridX < 0 || gridX >= 20 || gridY < 0 || gridY >= 15) {
-    return false;
-  }
-
-  // Check if this position is already damaged
-  if (shield.damageMap[gridY] && shield.damageMap[gridY][gridX]) {
-    return false;
-  }
-
-  // Check if this position is part of the shield shape
-  const row = SHIELD_SHAPE[gridY];
-  if (!row) return false;
-
-  const charIndex = gridX * 2;
-  const char = row.substring(charIndex, charIndex + 2);
-
-  return char === '██';
+  return isShieldCellSolid(shield, gridY, gridX);
 }
 
 function damageShield(shield: Shield, bullet: Bullet): void {
   // Mark damage on the shield's damage map at impact point
-  const relativeX = Math.floor((bullet.x + BULLET_WIDTH / 2 - shield.x) / (shield.width / 20));
+  const relativeX = Math.floor((bullet.x + BULLET_WIDTH / 2 - shield.x) / SHIELD_CELL_WIDTH);
   const relativeY = bullet.direction === 'down'
-    ? Math.floor((bullet.y - shield.y) / (shield.height / 15))
-    : Math.floor((bullet.y + BULLET_HEIGHT - shield.y) / (shield.height / 15));
+    ? Math.floor((bullet.y - shield.y) / SHIELD_CELL_HEIGHT)
+    : Math.floor((bullet.y + BULLET_HEIGHT - shield.y) / SHIELD_CELL_HEIGHT);
 
   // Damage a small area around the impact point (like original arcade)
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
-      const mapX = Math.max(0, Math.min(19, relativeX + dx));
-      const mapY = Math.max(0, Math.min(14, relativeY + dy));
+      const mapX = Math.max(0, Math.min(SHIELD_COLS - 1, relativeX + dx));
+      const mapY = Math.max(0, Math.min(SHIELD_ROWS - 1, relativeY + dy));
       if (shield.damageMap[mapY]) {
         shield.damageMap[mapY][mapX] = true;
       }
@@ -587,14 +592,14 @@ function damageShield(shield: Shield, bullet: Bullet): void {
 // Destroy shield pixels that an invader overlaps (when invaders descend to shield level)
 function destroyShieldSection(shield: Shield, invader: Invader): void {
   // Calculate the grid coordinates that the invader overlaps
-  const startX = Math.floor((invader.x - shield.x) / (shield.width / 20));
-  const endX = Math.floor((invader.x + invader.width - shield.x) / (shield.width / 20));
-  const startY = Math.floor((invader.y - shield.y) / (shield.height / 15));
-  const endY = Math.floor((invader.y + invader.height - shield.y) / (shield.height / 15));
+  const startX = Math.floor((invader.x - shield.x) / SHIELD_CELL_WIDTH);
+  const endX = Math.floor((invader.x + invader.width - shield.x) / SHIELD_CELL_WIDTH);
+  const startY = Math.floor((invader.y - shield.y) / SHIELD_CELL_HEIGHT);
+  const endY = Math.floor((invader.y + invader.height - shield.y) / SHIELD_CELL_HEIGHT);
 
   // Destroy all shield pixels the invader touches
-  for (let y = Math.max(0, startY); y <= Math.min(14, endY); y++) {
-    for (let x = Math.max(0, startX); x <= Math.min(19, endX); x++) {
+  for (let y = Math.max(0, startY); y <= Math.min(SHIELD_ROWS - 1, endY); y++) {
+    for (let x = Math.max(0, startX); x <= Math.min(SHIELD_COLS - 1, endX); x++) {
       if (shield.damageMap[y]) {
         shield.damageMap[y][x] = true;
       }
