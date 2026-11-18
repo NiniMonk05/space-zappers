@@ -309,10 +309,13 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
 
   // Check bullet collisions with shields (both player and enemy bullets damage shields!)
   newState.bullets = newState.bullets.filter((bullet) => {
+    // Distance the leading edge moved this update (bullets were moved above)
+    const travel = bullet.direction === 'up' ? BULLET_SPEED : bombSpeed;
     for (const shield of newState.shields) {
       // Check if bullet hits the shield's actual shape (not just bounding box)
-      if (checkShieldCollision(bullet, shield)) {
-        damageShield(shield, bullet);
+      const hit = findShieldHit(bullet, shield, travel);
+      if (hit) {
+        damageShield(shield, hit.row, hit.col);
         return false;
       }
     }
@@ -530,53 +533,66 @@ const SHIELD_SHAPE = [
   '████            ████',
 ];
 
-// Check if bullet collides with shield's actual shape (not just bounding box)
-function checkShieldCollision(bullet: Bullet, shield: Shield): boolean {
-  // First, quick bounding box check
-  if (!checkCollision(bullet, shield)) {
-    return false;
-  }
+const SHIELD_GRID_COLS = 20;
+const SHIELD_GRID_ROWS = 15;
 
-  // Calculate bullet center position relative to shield
-  const bulletCenterX = bullet.x + bullet.width / 2;
-  const bulletY = bullet.direction === 'down' ? bullet.y : bullet.y + bullet.height;
-
-  // Convert to shield grid coordinates
-  const gridX = Math.floor((bulletCenterX - shield.x) / (shield.width / 20));
-  const gridY = Math.floor((bulletY - shield.y) / (shield.height / 15));
-
-  // Check bounds
-  if (gridX < 0 || gridX >= 20 || gridY < 0 || gridY >= 15) {
-    return false;
-  }
-
-  // Check if this position is already damaged
-  if (shield.damageMap[gridY] && shield.damageMap[gridY][gridX]) {
-    return false;
-  }
-
-  // Check if this position is part of the shield shape
-  const row = SHIELD_SHAPE[gridY];
-  if (!row) return false;
-
-  const charIndex = gridX * 2;
-  const char = row.substring(charIndex, charIndex + 2);
-
-  return char === '██';
+function isShieldCellIntact(shield: Shield, row: number, col: number): boolean {
+  if (row < 0 || row >= SHIELD_GRID_ROWS || col < 0 || col >= SHIELD_GRID_COLS) return false;
+  if (shield.damageMap[row]?.[col]) return false;
+  return SHIELD_SHAPE[row]?.substring(col * 2, col * 2 + 2) === '██';
 }
 
-function damageShield(shield: Shield, bullet: Bullet): void {
-  // Mark damage on the shield's damage map at impact point
-  const relativeX = Math.floor((bullet.x + BULLET_WIDTH / 2 - shield.x) / (shield.width / 20));
-  const relativeY = bullet.direction === 'down'
-    ? Math.floor((bullet.y - shield.y) / (shield.height / 15))
-    : Math.floor((bullet.y + BULLET_HEIGHT - shield.y) / (shield.height / 15));
+/**
+ * Find the first intact shield cell that a projectile's leading edge crossed
+ * during its last move of `travel` pixels. The leading edge is the top of a
+ * rising shot and the bottom of a falling bomb. The whole segment travelled is
+ * checked, so a fast shot cannot skip over a thin row of cells.
+ * Returns the cell, or null if nothing was hit.
+ */
+export function findShieldHit(
+  bullet: Bullet,
+  shield: Shield,
+  travel: number
+): { row: number; col: number } | null {
+  const cellWidth = shield.width / SHIELD_GRID_COLS;
+  const cellHeight = shield.height / SHIELD_GRID_ROWS;
 
+  const col = Math.floor((bullet.x + bullet.width / 2 - shield.x) / cellWidth);
+  if (col < 0 || col >= SHIELD_GRID_COLS) return null;
+
+  let startRow: number;
+  let endRow: number;
+  if (bullet.direction === 'up') {
+    // Top edge moved up from (y + travel) to y. A top edge exactly on a
+    // cell's bottom boundary is not inside that cell.
+    const rowOf = (edgeY: number) => Math.floor((edgeY - shield.y) / cellHeight);
+    startRow = rowOf(bullet.y + travel);
+    endRow = rowOf(bullet.y);
+  } else {
+    // Bottom edge moved down from (bottom - travel) to bottom. A bottom edge
+    // exactly on a cell's top boundary is not inside that cell.
+    const rowOf = (edgeY: number) => Math.ceil((edgeY - shield.y) / cellHeight) - 1;
+    const bottom = bullet.y + bullet.height;
+    startRow = rowOf(bottom - travel);
+    endRow = rowOf(bottom);
+  }
+
+  // Walk the rows in the direction of travel and stop at the first intact cell
+  const step = endRow >= startRow ? 1 : -1;
+  for (let row = startRow; ; row += step) {
+    if (isShieldCellIntact(shield, row, col)) return { row, col };
+    if (row === endRow) break;
+  }
+  return null;
+}
+
+function damageShield(shield: Shield, hitRow: number, hitCol: number): void {
+  // Mark damage on the shield's damage map around the cell that was hit
   // Damage a small area around the impact point (like original arcade)
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
-      const mapX = Math.max(0, Math.min(19, relativeX + dx));
-      const mapY = Math.max(0, Math.min(14, relativeY + dy));
+      const mapX = Math.max(0, Math.min(19, hitCol + dx));
+      const mapY = Math.max(0, Math.min(14, hitRow + dy));
       if (shield.damageMap[mapY]) {
         shield.damageMap[mapY][mapX] = true;
       }
