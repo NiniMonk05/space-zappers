@@ -64,8 +64,9 @@ export interface GameState {
   ticksSinceMarch: number; // Ticks since the formation last stepped
   marchIntervalTicks: number; // Ticks between formation steps
   ufoSpawnCountdown: number; // Ticks until a bonus ship may appear
-  playerFlashTicks: number; // Ticks left of the player-hit flash
+  playerFlashTicks: number; // Ticks left of the player-hit flash (the player cannot be hit while it runs)
   levelBannerTicks: number; // Ticks left of the "LEVEL n" banner
+  respawnTicks: number; // Ticks left of the pause after losing a life; everything but the flash is frozen
 }
 
 export type GameEndReason = 'lives' | 'invaded' | 'timeout';
@@ -128,6 +129,9 @@ export function msToTicks(ms: number): number {
 export const UFO_SPAWN_TICKS = msToTicks(UFO_SPAWN_INTERVAL); // 900
 export const PLAYER_FLASH_TICKS = msToTicks(500); // 30
 export const LEVEL_BANNER_TICKS = msToTicks(2000); // 120
+export const DEATH_PAUSE_TICKS = msToTicks(1000); // 60: formation and bombs freeze after a hit
+export const RESPAWN_INVULNERABLE_TICKS = msToTicks(1500); // 90: blinking and unhittable after respawning
+export const PLAYER_RESPAWN_X = 16; // The player comes back at the left of the screen
 
 // Invader formation
 const INVADERS_PER_ROW = 11;
@@ -223,6 +227,7 @@ export function createInitialState(): GameState {
     ufoSpawnCountdown: UFO_SPAWN_TICKS,
     playerFlashTicks: 0,
     levelBannerTicks: LEVEL_BANNER_TICKS,
+    respawnTicks: 0,
   };
 }
 
@@ -313,9 +318,18 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
 
   // Advance timers
   state.tick++;
+  if (state.playerFlashTicks > 0) state.playerFlashTicks--;
+
+  // After losing a life everything holds still while the player flashes,
+  // then the player comes back at the left
+  if (state.respawnTicks > 0) {
+    state.respawnTicks--;
+    if (state.respawnTicks === 0) state.player.x = PLAYER_RESPAWN_X;
+    return events;
+  }
+
   state.ticksSinceMarch++;
   if (state.ufoSpawnCountdown > 0) state.ufoSpawnCountdown--;
-  if (state.playerFlashTicks > 0) state.playerFlashTicks--;
   if (state.levelBannerTicks > 0) state.levelBannerTicks--;
 
   const bombSpeed = getBombSpeed(state.level);
@@ -416,17 +430,24 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
     return true;
   });
 
-  // Check bullet collisions with player
+  // Check bullet collisions with player (bombs pass through while the player is blinking)
+  const canBeHit = state.playerFlashTicks === 0;
   for (const bullet of state.bullets) {
-    if (bullet.direction === 'down' && checkCollision(bullet, player)) {
+    if (canBeHit && bullet.direction === 'down' && checkCollision(bullet, player)) {
       player.lives--;
-      state.playerFlashTicks = PLAYER_FLASH_TICKS;
       events.push({ type: 'playerHit', livesLeft: player.lives });
       if (player.lives <= 0) {
+        state.playerFlashTicks = PLAYER_FLASH_TICKS;
         endGame(state, 'lives', events);
+        state.bullets = state.bullets.filter((b) => b !== bullet);
+        break;
       }
-      state.bullets = state.bullets.filter((b) => b !== bullet);
-      break;
+      // Freeze for a beat, clear the screen of shots and bombs, then respawn
+      // (see the top of tickGame) and blink through the invulnerable spell
+      state.respawnTicks = DEATH_PAUSE_TICKS;
+      state.playerFlashTicks = DEATH_PAUSE_TICKS + RESPAWN_INVULNERABLE_TICKS;
+      state.bullets = [];
+      return events;
     }
   }
 
