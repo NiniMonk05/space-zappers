@@ -48,6 +48,14 @@ export function drawGame(ctx: CanvasRenderingContext2D, gameState: GameState) {
     }
   }
 
+  // The invader just shot flashes in its cell: its own sprite, alternating
+  // white and red every 4 ticks like the player-hit flash (no new art)
+  const hit = gameState.invaderHit;
+  if (hit) {
+    const flash = Math.floor(hit.ticksLeft / 4) % 2 === 0 ? '#ffffff' : '#ff0000';
+    drawInvader(ctx, hit, gameState.animationFrame, { squid: flash, crab: flash, octopus: flash });
+  }
+
   // Draw player (Bitcoin orange tank, flashing red when hit)
   if (gameState.player.isAlive) {
     drawPlayer(ctx, gameState.player.x, gameState.player.y, gameState.playerFlashTicks);
