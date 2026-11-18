@@ -112,6 +112,7 @@ export const UFO_SPAWN_INTERVAL = 15000; // 15 seconds
 export const UFO_SPEED = 2;
 export const UFO_WIDTH = 48;
 export const UFO_HEIGHT = 24;
+export const BOMB_SURVIVES_SHOT_CHANCE = 0.1; // A shot that meets a bomb is always used up; the bomb sometimes survives
 export const BASE_FIRE_COOLDOWN = 500; // ms between shots at level 1
 export const MIN_FIRE_COOLDOWN = 150; // minimum cooldown at high levels
 
@@ -340,6 +341,8 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
   }
   state.bullets = state.bullets.filter((bullet) => bullet.y > 0 && bullet.y < GAME_HEIGHT);
 
+  shootDownBombs(state, rng);
+
   // Spawn bonus UFO randomly during gameplay
   if (!state.bonusUFO && state.ufoSpawnCountdown <= 0 && rng() < 0.3) {
     const direction = rng() < 0.5 ? 1 : -1;
@@ -561,6 +564,20 @@ function moveInvaders(
   });
 
   return { invaders: newInvaders, direction, shouldMoveDown };
+}
+
+/**
+ * A player shot that meets an enemy bomb is used up. The bomb is destroyed,
+ * except that now and then (BOMB_SURVIVES_SHOT_CHANCE) it shrugs the shot off
+ * and keeps falling.
+ */
+function shootDownBombs(state: GameState, rng: Rng): void {
+  const shot = state.bullets.find((b) => b.direction === 'up');
+  if (!shot) return;
+  const bomb = state.bullets.find((b) => b.direction === 'down' && checkCollision(shot, b));
+  if (!bomb) return;
+  const bombSurvives = rng() < BOMB_SURVIVES_SHOT_CHANCE;
+  state.bullets = state.bullets.filter((b) => b !== shot && (bombSurvives || b !== bomb));
 }
 
 /** Fire a player shot if the cooldown has passed and no shot is in flight. */
