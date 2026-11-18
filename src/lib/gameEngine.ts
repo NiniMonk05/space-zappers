@@ -298,7 +298,7 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
       const invader = newState.invaders[i];
       if (!invader.isAlive) continue;
 
-      if (checkCollision(bullet, invader)) {
+      if (bulletHitsInvader(bullet, invader)) {
         newState.invaders[i] = { ...invader, isAlive: false };
         newState.score += invader.points;
         return false;
@@ -321,7 +321,7 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
 
   // Check bullet collisions with player
   for (const bullet of newState.bullets) {
-    if (bullet.direction === 'down' && checkCollision(bullet, newState.player)) {
+    if (bullet.direction === 'down' && bulletHitsPlayer(bullet, newState.player)) {
       newState.player.lives--;
       if (newState.player.lives <= 0) {
         newState.gameOver = true;
@@ -502,13 +502,51 @@ export function shootBullet(state: GameState): GameState {
   };
 }
 
-function checkCollision(obj1: GameObject, obj2: GameObject): boolean {
+function checkCollision(obj1: Box, obj2: Box): boolean {
   return (
     obj1.x < obj2.x + obj2.width &&
     obj1.x + obj1.width > obj2.x &&
     obj1.y < obj2.y + obj2.height &&
     obj1.y + obj1.height > obj2.y
   );
+}
+
+type Box = { x: number; y: number; width: number; height: number };
+
+/**
+ * The player's hit area, matching the drawn tank in GameCanvas.drawPlayer:
+ * an 8 px barrel on top, a 32 px body and the 48 px base. The empty corners
+ * either side of the barrel and body are not part of the tank.
+ */
+export function getPlayerHitboxes(player: Player): Box[] {
+  return [
+    { x: player.x + 20, y: player.y, width: 8, height: 8 }, // barrel
+    { x: player.x + 8, y: player.y + 8, width: 32, height: 8 }, // body
+    { x: player.x, y: player.y + 16, width: 48, height: 8 }, // base
+  ];
+}
+
+export function bulletHitsPlayer(bullet: Bullet, player: Player): boolean {
+  return getPlayerHitboxes(player).some((box) => checkCollision(bullet, box));
+}
+
+/**
+ * Size of each enemy sprite as drawn (cells x 4 px, drawn from the invader's
+ * top-left corner). Keep in step with the sprite bitmaps in GameCanvas.tsx.
+ */
+export const INVADER_SPRITE_SIZE: Record<Invader['type'], { width: number; height: number }> = {
+  squid: { width: 32, height: 28 },
+  crab: { width: 28, height: 28 },
+  octopus: { width: 32, height: 28 },
+};
+
+export function getInvaderHitbox(invader: Invader): Box {
+  const size = INVADER_SPRITE_SIZE[invader.type];
+  return { x: invader.x, y: invader.y, width: size.width, height: size.height };
+}
+
+export function bulletHitsInvader(bullet: Bullet, invader: Invader): boolean {
+  return checkCollision(bullet, getInvaderHitbox(invader));
 }
 
 // Shield shape for collision detection (matching the visual shape)
