@@ -66,6 +66,7 @@ export interface GameState {
   ufoSpawnCountdown: number; // Ticks until a bonus ship may appear
   playerFlashTicks: number; // Ticks left of the player-hit flash
   levelBannerTicks: number; // Ticks left of the "LEVEL n" banner
+  timeLimitTicks: number | null; // Free play: the game ends after this many ticks
 }
 
 export type GameEndReason = 'lives' | 'invaded' | 'timeout';
@@ -193,7 +194,13 @@ export function getAlienColors(level: number): { squid: string; crab: string; oc
   return schemes[(level - 1) % schemes.length];
 }
 
-export function createInitialState(): GameState {
+export const FREE_PLAY_TICKS = 60 * TICK_RATE; // One minute of play
+
+export interface NewGameOptions {
+  timeLimitTicks?: number | null;
+}
+
+export function createInitialState(options: NewGameOptions = {}): GameState {
   return {
     player: {
       x: GAME_WIDTH / 2 - PLAYER_WIDTH / 2,
@@ -223,6 +230,7 @@ export function createInitialState(): GameState {
     ufoSpawnCountdown: UFO_SPAWN_TICKS,
     playerFlashTicks: 0,
     levelBannerTicks: LEVEL_BANNER_TICKS,
+    timeLimitTicks: options.timeLimitTicks ?? null,
   };
 }
 
@@ -287,6 +295,12 @@ function createShields(): Shield[] {
   }
 
   return shields;
+}
+
+/** Whole seconds of free play left (rounded up), or null if the game has no time limit. */
+export function getTimeLeftSeconds(state: GameState): number | null {
+  if (state.timeLimitTicks === null) return null;
+  return Math.max(0, Math.ceil((state.timeLimitTicks - state.tick) / TICK_RATE));
 }
 
 /** End the game once, recording why and emitting a gameOver event. */
@@ -522,6 +536,11 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
       endGame(state, 'invaded', events);
       break;
     }
+  }
+
+  // Free play ends when its time is used up (counted in ticks, so it stops while paused)
+  if (state.timeLimitTicks !== null && state.tick >= state.timeLimitTicks) {
+    endGame(state, 'timeout', events);
   }
 
   return events;
