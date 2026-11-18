@@ -38,6 +38,7 @@ import {
 } from '@/lib/gameEngine';
 import { advanceFrame, createFixedStepClock } from '@/lib/gameLoop';
 import { audioEngine } from '@/lib/audioEngine';
+import { createMarchBeat } from '@/lib/marchBeat';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useInvoicePayment } from '@/hooks/useInvoicePayment';
 import QRCode from 'qrcode';
@@ -105,7 +106,8 @@ export function Game() {
   const [shareMessage, setShareMessage] = useState('');
   const [showAddAccountDialog, setShowAddAccountDialog] = useState(false);
   const gameLoopRef = useRef<number>();
-  const previousInvaderCountRef = useRef(55);
+  // One bass beat per formation step, driven by the simulation's march events
+  const marchBeatRef = useRef(createMarchBeat((beatIndex) => audioEngine.playBeat(beatIndex)));
   const isPausedRef = useRef(false);
 
   const { user, picture, name } = useCurrentUser();
@@ -240,12 +242,8 @@ export function Game() {
       audioEngine.stopUfoSound();
     }
 
-    // Update music tempo based on invader count
-    const aliveInvaders = state.invaders.filter((inv) => inv.isAlive).length;
-    if (aliveInvaders !== previousInvaderCountRef.current) {
-      audioEngine.updateTempo(aliveInvaders / 55);
-      previousInvaderCountRef.current = aliveInvaders;
-    }
+    // The march beat: one beat per formation step, so it keeps pace with the march
+    marchBeatRef.current.onEvents(events, state.invaders.filter((inv) => inv.isAlive).length);
   }, []);
 
   const pauseGame = useCallback(() => {
@@ -265,13 +263,7 @@ export function Game() {
     if (state.bonusUFO && !isMuted) {
       audioEngine.startUfoSound();
     }
-    // Resume music with correct tempo based on alive invaders
-    if (!isMuted) {
-      const aliveInvaders = state.invaders.filter((inv) => inv.isAlive).length;
-      const speedRatio = aliveInvaders / 55;
-      const tempo = Math.max(150, 500 * speedRatio);
-      audioEngine.startMusic(tempo, state.level);
-    }
+    // The march beat resumes by itself with the next formation step
     state.isPaused = false;
     syncHud();
   }, [isMuted, syncHud]);
@@ -368,28 +360,6 @@ export function Game() {
       }
     };
   }, [hasStarted, gameState.gameOver, gameState.isPaused, handleEvents, drawFrame, syncHud]);
-
-  // Control music during gameplay - only plays when game is active
-  useEffect(() => {
-    if (!hasStarted) {
-      return;
-    }
-
-    if (gameState.gameOver) {
-      audioEngine.stopMusic();
-    } else if (!gameState.isPaused && !isMuted) {
-      if (!audioEngine.isMusicPlaying) {
-        const aliveInvaders = stateRef.current.invaders.filter((inv) => inv.isAlive).length;
-        const speedRatio = aliveInvaders / 55;
-        const tempo = Math.max(150, 500 * speedRatio);
-        audioEngine.startMusic(tempo, gameState.level);
-      }
-    }
-
-    return () => {
-      audioEngine.stopMusic();
-    };
-  }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, gameState.level]);
 
   // Keep isPausedRef in sync for the free play timer
   useEffect(() => {
@@ -633,7 +603,9 @@ export function Game() {
     setHasPublishedScore(false);
     setHighlightedScore(null);
     setGameEndReason(null);
-    previousInvaderCountRef.current = 55;
+    // Start the march beat afresh, with the level 1 motif
+    marchBeatRef.current.reset();
+    audioEngine.setLevel(1);
   };
 
   const togglePause = () => {
@@ -655,10 +627,9 @@ export function Game() {
     const muted = audioEngine.toggleMute();
     setIsMuted(muted);
 
+    // The march beat checks mute itself on every beat, so nothing to restart here
     if (muted) {
       audioEngine.stopMusic();
-    } else if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
-      audioEngine.startMusic();
     }
   };
 

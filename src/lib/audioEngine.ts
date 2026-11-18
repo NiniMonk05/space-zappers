@@ -238,7 +238,7 @@ class AudioEngine {
     });
   }
 
-  private playBeat(beatIndex: number) {
+  playBeat(beatIndex: number) {
     if (!this.context || this.isMuted) return;
 
     const level = this.currentLevel;
