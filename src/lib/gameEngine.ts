@@ -66,6 +66,8 @@ export interface GameState {
   ufoSpawnCountdown: number; // Ticks until a bonus ship may appear
   playerFlashTicks: number; // Ticks left of the player-hit flash
   levelBannerTicks: number; // Ticks left of the "LEVEL n" banner
+  // The invader just shot, flashing where it died; the player cannot fire until it clears
+  invaderHit: { x: number; y: number; type: Invader['type']; ticksLeft: number } | null;
 }
 
 export type GameEndReason = 'lives' | 'invaded' | 'timeout';
@@ -128,6 +130,7 @@ export function msToTicks(ms: number): number {
 export const UFO_SPAWN_TICKS = msToTicks(UFO_SPAWN_INTERVAL); // 900
 export const PLAYER_FLASH_TICKS = msToTicks(500); // 30
 export const LEVEL_BANNER_TICKS = msToTicks(2000); // 120
+export const INVADER_HIT_TICKS = msToTicks(250); // 15: a shot invader flashes in its cell this long
 
 // Invader formation
 const INVADERS_PER_ROW = 11;
@@ -223,6 +226,7 @@ export function createInitialState(): GameState {
     ufoSpawnCountdown: UFO_SPAWN_TICKS,
     playerFlashTicks: 0,
     levelBannerTicks: LEVEL_BANNER_TICKS,
+    invaderHit: null,
   };
 }
 
@@ -317,6 +321,7 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
   if (state.ufoSpawnCountdown > 0) state.ufoSpawnCountdown--;
   if (state.playerFlashTicks > 0) state.playerFlashTicks--;
   if (state.levelBannerTicks > 0) state.levelBannerTicks--;
+  if (state.invaderHit && --state.invaderHit.ticksLeft <= 0) state.invaderHit = null;
 
   const bombSpeed = getBombSpeed(state.level);
   const player = state.player;
@@ -396,6 +401,12 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
 
       if (checkCollision(bullet, invader)) {
         invader.isAlive = false;
+        state.invaderHit = {
+          x: invader.x,
+          y: invader.y,
+          type: invader.type,
+          ticksLeft: INVADER_HIT_TICKS,
+        };
         state.score += invader.points;
         events.push({ type: 'invaderKilled', points: invader.points });
         return false;
@@ -565,6 +576,9 @@ function moveInvaders(
 
 /** Fire a player shot if the cooldown has passed and no shot is in flight. */
 function tryShoot(state: GameState): boolean {
+  // The next shot waits until the last hit enemy's flash has cleared
+  if (state.invaderHit) return false;
+
   if (state.tick - state.player.lastShotTick < getFireCooldownTicks(state.level)) {
     return false;
   }
