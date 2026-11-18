@@ -84,6 +84,7 @@ export function Game() {
   const [gameState, setGameState] = useState<GameHud>(() => hudFromState(stateRef.current));
   const keysRef = useRef<Set<string>>(new Set());
   const fireQueuedRef = useRef(false);
+  const fireHeldRef = useRef(false); // Touch fire button held: fire whenever the last shot has gone
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clockRef = useRef(createFixedStepClock());
   const [isMuted, setIsMuted] = useState(false);
@@ -253,6 +254,7 @@ export function Game() {
     if (state.gameOver || state.isPaused) return;
     state.isPaused = true;
     fireQueuedRef.current = false;
+    fireHeldRef.current = false; // The touch controls unmount, so their release may never arrive
     audioEngine.stopMusic();
     audioEngine.stopUfoSound();
     syncHud();
@@ -339,7 +341,8 @@ export function Game() {
 
     const readInput = (): TickInput => {
       const keys = keysRef.current;
-      const fire = fireQueuedRef.current;
+      // A queued tap fires once; a held touch button asks every tick (the one-shot rule limits it)
+      const fire = fireQueuedRef.current || fireHeldRef.current;
       fireQueuedRef.current = false;
       return {
         left: keys.has('ArrowLeft') || keys.has('a'),
@@ -628,6 +631,7 @@ export function Game() {
     stateRef.current = createInitialState();
     keysRef.current.clear();
     fireQueuedRef.current = false;
+    fireHeldRef.current = false;
     syncHud();
     setHasStarted(true);
     setHasPublishedScore(false);
@@ -682,8 +686,13 @@ export function Game() {
   const handleTouchFire = useCallback(() => {
     if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
       fireQueuedRef.current = true; // Fired (and its sound played) on the next tick
+      fireHeldRef.current = true; // Keep firing while the button is held
     }
   }, [hasStarted, gameState.gameOver, gameState.isPaused]);
+
+  const handleTouchFireEnd = useCallback(() => {
+    fireHeldRef.current = false;
+  }, []);
 
   const publishScore = useCallback(async () => {
     if (!user) {
@@ -1134,6 +1143,7 @@ export function Game() {
           onRightStart={() => handleTouchRight(true)}
           onRightEnd={() => handleTouchRight(false)}
           onFire={handleTouchFire}
+          onFireEnd={handleTouchFireEnd}
           onPause={togglePause}
           sideMargin={sideMargin}
         />
