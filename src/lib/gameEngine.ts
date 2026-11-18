@@ -19,7 +19,7 @@ export interface Invader extends GameObject {
 
 export interface Player extends GameObject {
   lives: number;
-  lastShotTime: number;
+  lastShotTick: number; // Simulation tick of the last shot
 }
 
 export interface Bullet extends GameObject {
@@ -55,13 +55,42 @@ export interface GameState {
   gameOver: boolean;
   isPaused: boolean;
   invaderDirection: 1 | -1;
-  invaderSpeed: number;
-  lastInvaderMove: number;
   animationFrame: number;
-  nextUFOSpawn: number;
   levelTransition: boolean;
   ufoSoundPlaying: boolean;
+  endReason: GameEndReason | null;
+  // Timers, all counted in simulation ticks so they freeze while paused
+  tick: number; // Ticks simulated since the game started
+  ticksSinceMarch: number; // Ticks since the formation last stepped
+  marchIntervalTicks: number; // Ticks between formation steps
+  ufoSpawnCountdown: number; // Ticks until a bonus ship may appear
+  playerFlashTicks: number; // Ticks left of the player-hit flash
+  levelBannerTicks: number; // Ticks left of the "LEVEL n" banner
 }
+
+export type GameEndReason = 'lives' | 'invaded' | 'timeout';
+
+/** Player input for one tick. `fire` is a one-shot request. */
+export interface TickInput {
+  left: boolean;
+  right: boolean;
+  fire: boolean;
+}
+
+/** Something that happened during a tick, for sound and UI to react to. */
+export type GameEvent =
+  | { type: 'shot' }
+  | { type: 'invaderKilled'; points: number }
+  | { type: 'ufoSpawned'; endOfWave: boolean }
+  | { type: 'ufoHit'; points: number }
+  | { type: 'ufoLeft' }
+  | { type: 'playerHit'; livesLeft: number }
+  | { type: 'march' }
+  | { type: 'levelUp'; level: number }
+  | { type: 'gameOver'; reason: GameEndReason };
+
+/** Random number source in [0, 1). Defaults to Math.random; tests pass a seeded one. */
+export type Rng = () => number;
 
 // Game constants
 export const GAME_WIDTH = 800;
@@ -86,6 +115,20 @@ export const UFO_HEIGHT = 24;
 export const BASE_FIRE_COOLDOWN = 500; // ms between shots at level 1
 export const MIN_FIRE_COOLDOWN = 150; // minimum cooldown at high levels
 
+// Simulation timing. The game advances in fixed ticks of 1/60 s whatever the
+// display refresh rate, so speeds above are in pixels per tick.
+export const TICK_RATE = 60;
+export const TICK_MS = 1000 / TICK_RATE;
+
+/** Convert a duration in milliseconds to whole ticks (nearest). */
+export function msToTicks(ms: number): number {
+  return Math.round((ms * TICK_RATE) / 1000);
+}
+
+export const UFO_SPAWN_TICKS = msToTicks(UFO_SPAWN_INTERVAL); // 900
+export const PLAYER_FLASH_TICKS = msToTicks(500); // 30
+export const LEVEL_BANNER_TICKS = msToTicks(2000); // 120
+
 // Invader formation
 const INVADERS_PER_ROW = 11;
 const INVADER_ROWS = 5;
@@ -97,6 +140,37 @@ const INVADER_START_Y = 100;
 // Get fire cooldown based on level (faster shooting at higher levels)
 export function getFireCooldown(level: number): number {
   return Math.max(MIN_FIRE_COOLDOWN, BASE_FIRE_COOLDOWN - (level - 1) * 50);
+}
+
+export function getFireCooldownTicks(level: number): number {
+  return msToTicks(getFireCooldown(level));
+}
+
+/** March interval in ms: 1000 ms x (alive/55)^1.5, floored at 35 ms. */
+export function getMarchIntervalMs(aliveCount: number): number {
+  const totalInvaders = INVADERS_PER_ROW * INVADER_ROWS;
+  const ratio = aliveCount / totalInvaders;
+  return Math.max(MIN_INVADER_SPEED, INITIAL_INVADER_SPEED * Math.pow(ratio, 1.5));
+}
+
+/**
+ * March interval in ticks: the formation steps on the first tick at or after
+ * the interval has elapsed, as it did when it was timed per 60 Hz frame.
+ */
+export function getMarchIntervalTicks(aliveCount: number): number {
+  return Math.max(1, Math.ceil((getMarchIntervalMs(aliveCount) * TICK_RATE) / 1000 - 1e-9));
+}
+
+/** Small seedable RNG (mulberry32) for deterministic tests and replays. */
+export function createSeededRng(seed: number): Rng {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 // Get bomb speed based on level (slower at level 1, faster each level)
@@ -128,7 +202,7 @@ export function createInitialState(): GameState {
       height: PLAYER_HEIGHT,
       isAlive: true,
       lives: 3,
-      lastShotTime: 0,
+      lastShotTick: Number.NEGATIVE_INFINITY,
     },
     invaders: createInvaders(1),
     bullets: [],
@@ -139,12 +213,16 @@ export function createInitialState(): GameState {
     gameOver: false,
     isPaused: false,
     invaderDirection: 1,
-    invaderSpeed: INITIAL_INVADER_SPEED,
-    lastInvaderMove: Date.now(),
     animationFrame: 0,
-    nextUFOSpawn: Date.now() + UFO_SPAWN_INTERVAL,
     levelTransition: false,
     ufoSoundPlaying: false,
+    endReason: null,
+    tick: 0,
+    ticksSinceMarch: 0,
+    marchIntervalTicks: getMarchIntervalTicks(INVADERS_PER_ROW * INVADER_ROWS),
+    ufoSpawnCountdown: UFO_SPAWN_TICKS,
+    playerFlashTicks: 0,
+    levelBannerTicks: LEVEL_BANNER_TICKS,
   };
 }
 
@@ -211,44 +289,62 @@ function createShields(): Shield[] {
   return shields;
 }
 
-export function updateGame(state: GameState, keys: Set<string>): GameState {
+/** End the game once, recording why and emitting a gameOver event. */
+export function endGame(state: GameState, reason: GameEndReason, events?: GameEvent[]): void {
+  if (state.gameOver) return;
+  state.gameOver = true;
+  state.endReason = reason;
+  if (reason !== 'invaded') state.player.isAlive = false;
+  events?.push({ type: 'gameOver', reason });
+}
+
+/**
+ * Advance the simulation by exactly one fixed tick (1/60 s).
+ *
+ * Mutates `state` in place and returns what happened as a list of events;
+ * it has no other side effects (no sound, no timers, no clock reads), so the
+ * caller decides how to present the events. Randomness comes from `rng`.
+ */
+export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.random): GameEvent[] {
+  const events: GameEvent[] = [];
   if (state.gameOver || state.isPaused) {
-    return state;
+    return events;
   }
 
-  const newState = { ...state };
-  const now = Date.now();
+  // Advance timers
+  state.tick++;
+  state.ticksSinceMarch++;
+  if (state.ufoSpawnCountdown > 0) state.ufoSpawnCountdown--;
+  if (state.playerFlashTicks > 0) state.playerFlashTicks--;
+  if (state.levelBannerTicks > 0) state.levelBannerTicks--;
+
   const bombSpeed = getBombSpeed(state.level);
+  const player = state.player;
+
+  // Fire before moving, so the shot leaves from where the player was when it was requested
+  if (input.fire && tryShoot(state)) {
+    events.push({ type: 'shot' });
+  }
 
   // Update player position
-  if (keys.has('ArrowLeft') || keys.has('a')) {
-    newState.player = {
-      ...newState.player,
-      x: Math.max(0, newState.player.x - PLAYER_SPEED),
-    };
+  if (input.left) {
+    player.x = Math.max(0, player.x - PLAYER_SPEED);
   }
-  if (keys.has('ArrowRight') || keys.has('d')) {
-    newState.player = {
-      ...newState.player,
-      x: Math.min(GAME_WIDTH - PLAYER_WIDTH, newState.player.x + PLAYER_SPEED),
-    };
+  if (input.right) {
+    player.x = Math.min(GAME_WIDTH - PLAYER_WIDTH, player.x + PLAYER_SPEED);
   }
 
   // Update bullets with level-based bomb speed
-  newState.bullets = newState.bullets
-    .map((bullet) => ({
-      ...bullet,
-      y: bullet.direction === 'up'
-        ? bullet.y - BULLET_SPEED
-        : bullet.y + bombSpeed,
-    }))
-    .filter((bullet) => bullet.y > 0 && bullet.y < GAME_HEIGHT);
+  for (const bullet of state.bullets) {
+    bullet.y += bullet.direction === 'up' ? -BULLET_SPEED : bombSpeed;
+  }
+  state.bullets = state.bullets.filter((bullet) => bullet.y > 0 && bullet.y < GAME_HEIGHT);
 
   // Spawn bonus UFO randomly during gameplay
-  if (!newState.bonusUFO && now >= newState.nextUFOSpawn && Math.random() < 0.3) {
-    const direction = Math.random() < 0.5 ? 1 : -1;
-    const ufoType = UFO_TYPES[Math.floor(Math.random() * UFO_TYPES.length)];
-    newState.bonusUFO = {
+  if (!state.bonusUFO && state.ufoSpawnCountdown <= 0 && rng() < 0.3) {
+    const direction = rng() < 0.5 ? 1 : -1;
+    const ufoType = UFO_TYPES[Math.floor(rng() * UFO_TYPES.length)];
+    state.bonusUFO = {
       x: direction > 0 ? -UFO_WIDTH : GAME_WIDTH,
       y: 65,
       width: UFO_WIDTH,
@@ -258,49 +354,50 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
       color: ufoType.color,
       speed: UFO_SPEED * direction,
     };
-    newState.ufoSoundPlaying = true;
+    state.ufoSoundPlaying = true;
+    events.push({ type: 'ufoSpawned', endOfWave: false });
   }
 
   // Update UFO
-  if (newState.bonusUFO) {
-    newState.bonusUFO = {
-      ...newState.bonusUFO,
-      x: newState.bonusUFO.x + newState.bonusUFO.speed,
-    };
+  if (state.bonusUFO) {
+    state.bonusUFO.x += state.bonusUFO.speed;
 
     // Remove UFO if off screen
-    if (newState.bonusUFO.x < -UFO_WIDTH || newState.bonusUFO.x > GAME_WIDTH) {
-      newState.bonusUFO = null;
-      newState.nextUFOSpawn = now + UFO_SPAWN_INTERVAL;
-      newState.ufoSoundPlaying = false;
+    if (state.bonusUFO.x < -UFO_WIDTH || state.bonusUFO.x > GAME_WIDTH) {
+      state.bonusUFO = null;
+      state.ufoSpawnCountdown = UFO_SPAWN_TICKS;
+      state.ufoSoundPlaying = false;
+      events.push({ type: 'ufoLeft' });
     }
   }
 
   // Check bullet collisions with UFO
-  newState.bullets = newState.bullets.filter((bullet) => {
-    if (bullet.direction === 'down' || !newState.bonusUFO) return true;
+  state.bullets = state.bullets.filter((bullet) => {
+    const ufo = state.bonusUFO;
+    if (bullet.direction === 'down' || !ufo) return true;
 
-    if (checkCollision(bullet, newState.bonusUFO)) {
-      newState.score += newState.bonusUFO.points;
-      newState.bonusUFO = null;
-      newState.nextUFOSpawn = now + UFO_SPAWN_INTERVAL;
-      newState.ufoSoundPlaying = false;
+    if (checkCollision(bullet, ufo)) {
+      state.score += ufo.points;
+      state.bonusUFO = null;
+      state.ufoSpawnCountdown = UFO_SPAWN_TICKS;
+      state.ufoSoundPlaying = false;
+      events.push({ type: 'ufoHit', points: ufo.points });
       return false;
     }
     return true;
   });
 
   // Check bullet collisions with invaders
-  newState.bullets = newState.bullets.filter((bullet) => {
+  state.bullets = state.bullets.filter((bullet) => {
     if (bullet.direction === 'down') return true;
 
-    for (let i = 0; i < newState.invaders.length; i++) {
-      const invader = newState.invaders[i];
+    for (const invader of state.invaders) {
       if (!invader.isAlive) continue;
 
       if (checkCollision(bullet, invader)) {
-        newState.invaders[i] = { ...invader, isAlive: false };
-        newState.score += invader.points;
+        invader.isAlive = false;
+        state.score += invader.points;
+        events.push({ type: 'invaderKilled', points: invader.points });
         return false;
       }
     }
@@ -308,8 +405,8 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
   });
 
   // Check bullet collisions with shields (both player and enemy bullets damage shields!)
-  newState.bullets = newState.bullets.filter((bullet) => {
-    for (const shield of newState.shields) {
+  state.bullets = state.bullets.filter((bullet) => {
+    for (const shield of state.shields) {
       // Check if bullet hits the shield's actual shape (not just bounding box)
       if (checkShieldCollision(bullet, shield)) {
         damageShield(shield, bullet);
@@ -320,55 +417,49 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
   });
 
   // Check bullet collisions with player
-  for (const bullet of newState.bullets) {
-    if (bullet.direction === 'down' && checkCollision(bullet, newState.player)) {
-      newState.player.lives--;
-      if (newState.player.lives <= 0) {
-        newState.gameOver = true;
-        newState.player.isAlive = false;
+  for (const bullet of state.bullets) {
+    if (bullet.direction === 'down' && checkCollision(bullet, player)) {
+      player.lives--;
+      state.playerFlashTicks = PLAYER_FLASH_TICKS;
+      events.push({ type: 'playerHit', livesLeft: player.lives });
+      if (player.lives <= 0) {
+        endGame(state, 'lives', events);
       }
-      newState.bullets = newState.bullets.filter((b) => b !== bullet);
+      state.bullets = state.bullets.filter((b) => b !== bullet);
       break;
     }
   }
 
   // Move invaders
-  if (now - newState.lastInvaderMove > newState.invaderSpeed) {
+  if (state.ticksSinceMarch >= state.marchIntervalTicks) {
     const { invaders, direction, shouldMoveDown } = moveInvaders(
-      newState.invaders,
-      newState.invaderDirection
+      state.invaders,
+      state.invaderDirection
     );
 
-    newState.invaders = invaders;
-    newState.lastInvaderMove = now;
-    newState.animationFrame = (newState.animationFrame + 1) % 2;
+    state.invaders = invaders;
+    state.ticksSinceMarch = 0;
+    state.animationFrame = (state.animationFrame + 1) % 2;
 
     if (shouldMoveDown) {
-      newState.invaderDirection = direction === 1 ? -1 : 1;
+      state.invaderDirection = direction === 1 ? -1 : 1;
     } else {
-      newState.invaderDirection = direction;
+      state.invaderDirection = direction;
     }
 
     // Increase speed as invaders are destroyed (exponential curve like original arcade)
-    const aliveCount = newState.invaders.filter((inv) => inv.isAlive).length;
-    const totalInvaders = INVADERS_PER_ROW * INVADER_ROWS;
-    // Exponential curve: speed increases dramatically as fewer aliens remain
-    // At 55 aliens: 1000ms, at 10 aliens: ~180ms, at 1 alien: ~35ms
-    const ratio = aliveCount / totalInvaders;
-    const speedMultiplier = Math.pow(ratio, 1.5); // Exponential curve
-    newState.invaderSpeed = Math.max(
-      MIN_INVADER_SPEED,
-      INITIAL_INVADER_SPEED * speedMultiplier
-    );
+    const aliveCount = state.invaders.filter((inv) => inv.isAlive).length;
+    state.marchIntervalTicks = getMarchIntervalTicks(aliveCount);
+    events.push({ type: 'march' });
   }
 
   // Random invader shooting (more frequent at higher levels)
   const shootChance = 0.015 + (state.level - 1) * 0.003;
-  if (Math.random() < shootChance) {
-    const aliveInvaders = newState.invaders.filter((inv) => inv.isAlive);
+  if (rng() < shootChance) {
+    const aliveInvaders = state.invaders.filter((inv) => inv.isAlive);
     if (aliveInvaders.length > 0) {
-      const shooter = aliveInvaders[Math.floor(Math.random() * aliveInvaders.length)];
-      newState.bullets.push({
+      const shooter = aliveInvaders[Math.floor(rng() * aliveInvaders.length)];
+      state.bullets.push({
         x: shooter.x + shooter.width / 2 - BULLET_WIDTH / 2,
         y: shooter.y + shooter.height,
         width: BULLET_WIDTH,
@@ -380,11 +471,11 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
   }
 
   // Check if all invaders are destroyed - spawn end-of-level UFO
-  if (newState.invaders.every((inv) => !inv.isAlive)) {
+  if (state.invaders.every((inv) => !inv.isAlive)) {
     // Spawn bonus UFO for end of level
-    if (!newState.bonusUFO && !newState.levelTransition) {
-      const direction = Math.random() < 0.5 ? 1 : -1;
-      newState.bonusUFO = {
+    if (!state.bonusUFO && !state.levelTransition) {
+      const direction = rng() < 0.5 ? 1 : -1;
+      state.bonusUFO = {
         x: direction > 0 ? -UFO_WIDTH : GAME_WIDTH,
         y: 65,
         width: UFO_WIDTH,
@@ -394,26 +485,29 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
         color: '#ffffff', // White/gold for special end-of-level UFO
         speed: UFO_SPEED * direction * 1.5, // Faster
       };
-      newState.levelTransition = true;
-      newState.ufoSoundPlaying = true;
+      state.levelTransition = true;
+      state.ufoSoundPlaying = true;
+      events.push({ type: 'ufoSpawned', endOfWave: true });
     }
 
     // Only advance level once UFO is gone or shot
-    if (!newState.bonusUFO && newState.levelTransition) {
-      newState.level++;
-      newState.invaders = createInvaders(newState.level);
+    if (!state.bonusUFO && state.levelTransition) {
+      state.level++;
+      state.invaders = createInvaders(state.level);
       // Shields persist across levels (like the original arcade game)
-      newState.invaderSpeed = INITIAL_INVADER_SPEED; // Reset to base speed each level (like original)
-      newState.levelTransition = false;
-      newState.nextUFOSpawn = now + UFO_SPAWN_INTERVAL;
+      state.marchIntervalTicks = getMarchIntervalTicks(INVADERS_PER_ROW * INVADER_ROWS); // Reset to base speed each level (like original)
+      state.levelTransition = false;
+      state.ufoSpawnCountdown = UFO_SPAWN_TICKS;
+      state.levelBannerTicks = LEVEL_BANNER_TICKS;
+      events.push({ type: 'levelUp', level: state.level });
     }
   }
 
   // Check if invaders touch shields - destroy shield sections they overlap
-  for (const invader of newState.invaders) {
+  for (const invader of state.invaders) {
     if (!invader.isAlive) continue;
 
-    for (const shield of newState.shields) {
+    for (const shield of state.shields) {
       // Check if invader overlaps with shield bounding box
       if (checkCollision(invader, shield)) {
         // Destroy the shield pixels that the invader touches
@@ -423,14 +517,14 @@ export function updateGame(state: GameState, keys: Set<string>): GameState {
   }
 
   // Check if invaders reached the bottom
-  for (const invader of newState.invaders) {
-    if (invader.isAlive && invader.y + invader.height >= newState.player.y) {
-      newState.gameOver = true;
+  for (const invader of state.invaders) {
+    if (invader.isAlive && invader.y + invader.height >= player.y) {
+      endGame(state, 'invaded', events);
       break;
     }
   }
 
-  return newState;
+  return events;
 }
 
 function moveInvaders(
@@ -469,37 +563,25 @@ function moveInvaders(
   return { invaders: newInvaders, direction, shouldMoveDown };
 }
 
-export function shootBullet(state: GameState): GameState {
-  const now = Date.now();
-  const fireCooldown = getFireCooldown(state.level);
-
-  // Check fire cooldown
-  if (now - state.player.lastShotTime < fireCooldown) {
-    return state;
+/** Fire a player shot if the cooldown has passed and no shot is in flight. */
+function tryShoot(state: GameState): boolean {
+  if (state.tick - state.player.lastShotTick < getFireCooldownTicks(state.level)) {
+    return false;
   }
 
   // Only one bullet at a time from player (classic mode)
-  const playerBulletExists = state.bullets.some((b) => b.direction === 'up');
-  if (playerBulletExists) return state;
+  if (state.bullets.some((b) => b.direction === 'up')) return false;
 
-  return {
-    ...state,
-    player: {
-      ...state.player,
-      lastShotTime: now,
-    },
-    bullets: [
-      ...state.bullets,
-      {
-        x: state.player.x + state.player.width / 2 - BULLET_WIDTH / 2,
-        y: state.player.y - BULLET_HEIGHT,
-        width: BULLET_WIDTH,
-        height: BULLET_HEIGHT,
-        isAlive: true,
-        direction: 'up',
-      },
-    ],
-  };
+  state.player.lastShotTick = state.tick;
+  state.bullets.push({
+    x: state.player.x + state.player.width / 2 - BULLET_WIDTH / 2,
+    y: state.player.y - BULLET_HEIGHT,
+    width: BULLET_WIDTH,
+    height: BULLET_HEIGHT,
+    isAlive: true,
+    direction: 'up',
+  });
+  return true;
 }
 
 function checkCollision(obj1: GameObject, obj2: GameObject): boolean {
