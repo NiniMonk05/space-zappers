@@ -1,81 +1,75 @@
-import { useEffect, useRef } from 'react';
+import { forwardRef } from 'react';
 import type { GameState } from '@/lib/gameEngine';
 import { getAlienColors } from '@/lib/gameEngine';
 
-interface GameCanvasProps {
-  gameState: GameState;
-  playerFlashing?: boolean;
-}
-
-export function GameCanvas({ gameState, playerFlashing = false }: GameCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Clear canvas
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Get colors for current level
-    const colors = getAlienColors(gameState.level);
-
-    // Draw shields (flat bottom, solid, symmetrical)
-    for (const shield of gameState.shields) {
-      if (shield.isAlive) {
-        drawShield(ctx, shield.x, shield.y, shield.width, shield.height, shield.damageMap);
-      }
-    }
-
-    // Draw UFO if present
-    if (gameState.bonusUFO) {
-      drawUFO(ctx, gameState.bonusUFO.x, gameState.bonusUFO.y, gameState.bonusUFO.points, gameState.bonusUFO.color);
-    }
-
-    // Draw invaders with level-based colors
-    for (const invader of gameState.invaders) {
-      if (invader.isAlive) {
-        drawInvader(ctx, invader, gameState.animationFrame, colors);
-      }
-    }
-
-    // Draw player (Bitcoin orange tank, flashing red when hit)
-    if (gameState.player.isAlive) {
-      drawPlayer(ctx, gameState.player.x, gameState.player.y, playerFlashing);
-    }
-
-    // Draw bullets
-    for (const bullet of gameState.bullets) {
-      if (bullet.direction === 'up') {
-        // Player bullet - lightning zap shape
-        drawZapBullet(ctx, bullet.x, bullet.y, bullet.height);
-      } else {
-        // Enemy bomb
-        ctx.fillStyle = '#ff00ff';
-        ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
-      }
-    }
-  }, [gameState]);
-
+/**
+ * The game canvas. It holds no state: the game loop draws into it with
+ * `drawGame` after each animation frame, so the page does not re-render per frame.
+ */
+export const GameCanvas = forwardRef<HTMLCanvasElement>(function GameCanvas(_props, ref) {
   return (
     <canvas
-      ref={canvasRef}
+      ref={ref}
       width={800}
       height={600}
       className="border-4 border-green-500 rounded-lg shadow-[0_0_30px_rgba(0,255,0,0.3)]"
       style={{ imageRendering: 'pixelated' }}
     />
   );
+});
+
+/** Draw the whole scene for the given simulation state. */
+export function drawGame(ctx: CanvasRenderingContext2D, gameState: GameState) {
+  const canvas = ctx.canvas;
+
+  // Clear canvas
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Get colors for current level
+  const colors = getAlienColors(gameState.level);
+
+  // Draw shields (flat bottom, solid, symmetrical)
+  for (const shield of gameState.shields) {
+    if (shield.isAlive) {
+      drawShield(ctx, shield.x, shield.y, shield.width, shield.height, shield.damageMap);
+    }
+  }
+
+  // Draw UFO if present
+  if (gameState.bonusUFO) {
+    drawUFO(ctx, gameState.bonusUFO.x, gameState.bonusUFO.y, gameState.bonusUFO.points, gameState.bonusUFO.color);
+  }
+
+  // Draw invaders with level-based colors
+  for (const invader of gameState.invaders) {
+    if (invader.isAlive) {
+      drawInvader(ctx, invader, gameState.animationFrame, colors);
+    }
+  }
+
+  // Draw player (Bitcoin orange tank, flashing red when hit)
+  if (gameState.player.isAlive) {
+    drawPlayer(ctx, gameState.player.x, gameState.player.y, gameState.playerFlashTicks);
+  }
+
+  // Draw bullets
+  for (const bullet of gameState.bullets) {
+    if (bullet.direction === 'up') {
+      // Player bullet - lightning zap shape
+      drawZapBullet(ctx, bullet.x, bullet.y, bullet.height);
+    } else {
+      // Enemy bomb
+      ctx.fillStyle = '#ff00ff';
+      ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+    }
+  }
 }
 
 // Draw player tank - Bitcoin orange color, solid fill (flashes red when hit)
-function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, flashing: boolean = false) {
-  // Alternate between red and white when flashing
-  ctx.fillStyle = flashing ? (Date.now() % 200 < 100 ? '#ff0000' : '#ffffff') : '#f7931a';
+function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, flashTicks: number = 0) {
+  // While flashing, alternate red and white every 6 ticks (100 ms at 60 ticks/s)
+  ctx.fillStyle = flashTicks > 0 ? (Math.floor(flashTicks / 6) % 2 === 0 ? '#ff0000' : '#ffffff') : '#f7931a';
 
   // Draw solid tank shape - cannon on top, wide base
   // Cannon barrel

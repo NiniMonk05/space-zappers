@@ -8,7 +8,7 @@ interface BeforeInstallPromptEvent extends Event {
 import { useQueryClient } from '@tanstack/react-query';
 import { Zap, Volume2, VolumeX, Trophy, Share2, Play, Pause, Copy, Check, HelpCircle, LogOut, Wallet, UserPlus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameCanvas } from '@/components/GameCanvas';
+import { GameCanvas, drawGame } from '@/components/GameCanvas';
 import { LeaderboardEntry } from '@/components/LeaderboardEntry';
 import { LoginArea } from '@/components/auth/LoginArea';
 import LoginDialog from '@/components/auth/LoginDialog';
@@ -31,10 +31,12 @@ import { useNWC } from '@/hooks/useNWCContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   createInitialState,
-  updateGame,
-  shootBullet,
+  endGame,
+  type GameEvent,
   type GameState,
+  type TickInput,
 } from '@/lib/gameEngine';
+import { advanceFrame, createFixedStepClock } from '@/lib/gameLoop';
 import { audioEngine } from '@/lib/audioEngine';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useInvoicePayment } from '@/hooks/useInvoicePayment';
@@ -45,9 +47,45 @@ import { WalletModal } from '@/components/WalletModal';
 const GAME_COST_SATS = 21;
 const RECIPIENT_LIGHTNING_ADDRESS = 'space.zappers@bank.weeksfamily.me';
 
+/**
+ * The part of the simulation the page's HUD and overlays show. The full
+ * simulation state lives in a ref and is stepped by the game loop; this
+ * snapshot is pushed to React only when one of these values changes.
+ */
+interface GameHud {
+  score: number;
+  level: number;
+  lives: number;
+  isPaused: boolean;
+  gameOver: boolean;
+  levelBanner: number | null; // Level shown in the "LEVEL n" banner, or null when hidden
+}
+
+function hudFromState(state: GameState): GameHud {
+  return {
+    score: state.score,
+    level: state.level,
+    lives: state.player.lives,
+    isPaused: state.isPaused,
+    gameOver: state.gameOver,
+    levelBanner: state.levelBannerTicks > 0 ? state.level : null,
+  };
+}
+
+function sameHud(a: GameHud, b: GameHud): boolean {
+  return a.score === b.score && a.level === b.level && a.lives === b.lives &&
+    a.isPaused === b.isPaused && a.gameOver === b.gameOver && a.levelBanner === b.levelBanner;
+}
+
 export function Game() {
-  const [gameState, setGameState] = useState<GameState>(createInitialState());
-  const [keys, setKeys] = useState<Set<string>>(new Set());
+  // Simulation state: owned by the game loop, never copied into React state
+  const stateRef = useRef<GameState>(createInitialState());
+  // HUD snapshot for rendering (score, lives, level, pause, game over, banner)
+  const [gameState, setGameState] = useState<GameHud>(() => hudFromState(stateRef.current));
+  const keysRef = useRef<Set<string>>(new Set());
+  const fireQueuedRef = useRef(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const clockRef = useRef(createFixedStepClock());
   const [isMuted, setIsMuted] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [hasPaid, setHasPaid] = useState(false);
@@ -62,18 +100,12 @@ export function Game() {
   const [freePlayTimeLeft, setFreePlayTimeLeft] = useState(60);
   const [gameEndReason, setGameEndReason] = useState<'lives' | 'timeout' | null>(null);
   const freePlayTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [showLevelPopup, setShowLevelPopup] = useState(false);
-  const [displayedLevel, setDisplayedLevel] = useState(1);
-  const [playerFlashing, setPlayerFlashing] = useState(false);
   const [showLoginToSave, setShowLoginToSave] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
   const [showAddAccountDialog, setShowAddAccountDialog] = useState(false);
   const gameLoopRef = useRef<number>();
-  const previousScoreRef = useRef(0);
-  const previousLevelRef = useRef(1);
   const previousInvaderCountRef = useRef(55);
-  const previousLivesRef = useRef(3);
   const isPausedRef = useRef(false);
 
   const { user, picture, name } = useCurrentUser();
@@ -148,6 +180,102 @@ export function Game() {
     },
   });
 
+  // Push the HUD snapshot to React, only when something in it changed
+  const syncHud = useCallback(() => {
+    const next = hudFromState(stateRef.current);
+    setGameState((prev) => (sameHud(prev, next) ? prev : next));
+  }, []);
+
+  // Draw the current simulation state on the canvas
+  const drawFrame = useCallback(() => {
+    const ctx = canvasRef.current?.getContext('2d');
+    if (ctx) drawGame(ctx, stateRef.current);
+  }, []);
+
+  // Redraw when not animating (start screen, pause, game over, new game)
+  useEffect(() => {
+    drawFrame();
+  }, [drawFrame, gameState, hasStarted]);
+
+  // React to what happened during the last frame's ticks (sound and UI only)
+  const handleEvents = useCallback((events: GameEvent[]) => {
+    for (const event of events) {
+      switch (event.type) {
+        case 'shot':
+          audioEngine.playShoot();
+          break;
+        case 'invaderKilled':
+          audioEngine.playExplosion();
+          break;
+        case 'ufoHit':
+          audioEngine.playUfoHit();
+          break;
+        case 'playerHit':
+          // The last life plays the game-over sound instead
+          if (event.livesLeft > 0) audioEngine.playPlayerHit();
+          break;
+        case 'levelUp':
+          audioEngine.playLevelUp();
+          audioEngine.setLevel(event.level);
+          break;
+        case 'gameOver': {
+          audioEngine.playGameOver();
+          audioEngine.stopMusic();
+          audioEngine.stopUfoSound();
+          // Only set the reason if not already set (the free-play timeout sets it first)
+          const reason = event.reason === 'timeout' ? 'timeout' : 'lives';
+          setGameEndReason((prev) => prev || reason);
+          break;
+        }
+      }
+    }
+
+    const state = stateRef.current;
+    if (state.gameOver) return;
+
+    // The bonus-ship sound follows whether a bonus ship is on screen
+    if (state.ufoSoundPlaying && !audioEngine.isUfoPlaying) {
+      audioEngine.startUfoSound();
+    } else if (!state.ufoSoundPlaying && audioEngine.isUfoPlaying) {
+      audioEngine.stopUfoSound();
+    }
+
+    // Update music tempo based on invader count
+    const aliveInvaders = state.invaders.filter((inv) => inv.isAlive).length;
+    if (aliveInvaders !== previousInvaderCountRef.current) {
+      audioEngine.updateTempo(aliveInvaders / 55);
+      previousInvaderCountRef.current = aliveInvaders;
+    }
+  }, []);
+
+  const pauseGame = useCallback(() => {
+    const state = stateRef.current;
+    if (state.gameOver || state.isPaused) return;
+    state.isPaused = true;
+    fireQueuedRef.current = false;
+    audioEngine.stopMusic();
+    audioEngine.stopUfoSound();
+    syncHud();
+  }, [syncHud]);
+
+  const resumeGame = useCallback(() => {
+    const state = stateRef.current;
+    if (state.gameOver || !state.isPaused) return;
+    // Resume UFO sound if UFO is present
+    if (state.bonusUFO && !isMuted) {
+      audioEngine.startUfoSound();
+    }
+    // Resume music with correct tempo based on alive invaders
+    if (!isMuted) {
+      const aliveInvaders = state.invaders.filter((inv) => inv.isAlive).length;
+      const speedRatio = aliveInvaders / 55;
+      const tempo = Math.max(150, 500 * speedRatio);
+      audioEngine.startMusic(tempo, state.level);
+    }
+    state.isPaused = false;
+    syncHud();
+  }, [isMuted, syncHud]);
+
   // Handle keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -162,52 +290,28 @@ export function Game() {
       // Any key unpauses the game
       if (hasStarted && gameState.isPaused && !gameState.gameOver) {
         e.preventDefault();
-        setGameState((state) => {
-          // Resume UFO sound if UFO is present
-          if (state.bonusUFO && !isMuted) {
-            audioEngine.startUfoSound();
-          }
-          // Resume music with correct tempo based on alive invaders
-          if (!isMuted) {
-            const aliveInvaders = state.invaders.filter((inv) => inv.isAlive).length;
-            const speedRatio = aliveInvaders / 55;
-            const tempo = Math.max(150, 500 * speedRatio);
-            audioEngine.startMusic(tempo, state.level);
-          }
-          return { ...state, isPaused: false };
-        });
+        resumeGame();
         return;
       }
 
       if (['ArrowLeft', 'ArrowRight', 'a', 'd', ' ', 'Escape'].includes(e.key)) {
         e.preventDefault();
-        setKeys((prev) => new Set(prev).add(e.key));
+        keysRef.current.add(e.key);
 
         // Escape key pauses the game and music
         if (e.key === 'Escape' && hasStarted && !gameState.gameOver && !gameState.isPaused) {
-          setGameState((state) => ({ ...state, isPaused: true }));
-          audioEngine.stopMusic();
-          audioEngine.stopUfoSound();
+          pauseGame();
         }
 
+        // Space requests a shot; the next tick fires it if the cooldown allows
         if (e.key === ' ' && hasStarted && !gameState.gameOver && !gameState.isPaused) {
-          setGameState((state) => {
-            const newState = shootBullet(state);
-            if (newState !== state) {
-              audioEngine.playShoot();
-            }
-            return newState;
-          });
+          fireQueuedRef.current = true;
         }
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      setKeys((prev) => {
-        const next = new Set(prev);
-        next.delete(e.key);
-        return next;
-      });
+      keysRef.current.delete(e.key);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -217,9 +321,10 @@ export function Game() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, showPayment, hasPaid]);
+  }, [hasStarted, gameState.gameOver, gameState.isPaused, isMuted, showPayment, hasPaid, pauseGame, resumeGame]);
 
-  // Game loop
+  // Game loop: runs the simulation in fixed 1/60 s ticks, whatever the display
+  // refresh rate, then draws the canvas and updates the HUD
   useEffect(() => {
     if (!hasStarted || gameState.gameOver || gameState.isPaused) {
       if (gameLoopRef.current) {
@@ -228,63 +333,29 @@ export function Game() {
       return;
     }
 
-    const loop = () => {
-      setGameState((state) => {
-        const newState = updateGame(state, keys);
+    // Start timing afresh, so time spent paused is never caught up on
+    let lastTime: number | null = null;
+    clockRef.current = createFixedStepClock();
 
-        // Play sound effects
-        if (newState.score > previousScoreRef.current) {
-          // Check if UFO was hit
-          if (state.bonusUFO && !newState.bonusUFO) {
-            audioEngine.playUfoHit();
-          } else {
-            audioEngine.playExplosion();
-          }
-          previousScoreRef.current = newState.score;
-        }
+    const readInput = (): TickInput => {
+      const keys = keysRef.current;
+      const fire = fireQueuedRef.current;
+      fireQueuedRef.current = false;
+      return {
+        left: keys.has('ArrowLeft') || keys.has('a'),
+        right: keys.has('ArrowRight') || keys.has('d'),
+        fire,
+      };
+    };
 
-        if (newState.level > previousLevelRef.current) {
-          audioEngine.playLevelUp();
-          audioEngine.setLevel(newState.level);
-          previousLevelRef.current = newState.level;
-          setDisplayedLevel(newState.level);
-          setShowLevelPopup(true);
-          setTimeout(() => setShowLevelPopup(false), 2000);
-        }
+    const loop = (time: number) => {
+      const delta = lastTime === null ? 0 : time - lastTime;
+      lastTime = time;
 
-        // Handle UFO sound
-        if (newState.ufoSoundPlaying && !audioEngine.isUfoPlaying) {
-          audioEngine.startUfoSound();
-        } else if (!newState.ufoSoundPlaying && audioEngine.isUfoPlaying) {
-          audioEngine.stopUfoSound();
-        }
-
-        // Update music tempo based on invader count
-        const aliveInvaders = newState.invaders.filter((inv) => inv.isAlive).length;
-        if (aliveInvaders !== previousInvaderCountRef.current) {
-          const speedRatio = aliveInvaders / 55;
-          audioEngine.updateTempo(speedRatio);
-          previousInvaderCountRef.current = aliveInvaders;
-        }
-
-        // Detect player hit (lost a life)
-        if (newState.player.lives < previousLivesRef.current && !newState.gameOver) {
-          audioEngine.playPlayerHit();
-          previousLivesRef.current = newState.player.lives;
-          setPlayerFlashing(true);
-          setTimeout(() => setPlayerFlashing(false), 500);
-        }
-
-        if (newState.gameOver && !state.gameOver) {
-          audioEngine.playGameOver();
-          audioEngine.stopMusic();
-          audioEngine.stopUfoSound();
-          // Only set 'lives' reason if not already set (timeout sets it first)
-          setGameEndReason((prev) => prev || 'lives');
-        }
-
-        return newState;
-      });
+      const { events } = advanceFrame(stateRef.current, clockRef.current, delta, readInput);
+      handleEvents(events);
+      drawFrame();
+      syncHud();
 
       gameLoopRef.current = requestAnimationFrame(loop);
     };
@@ -296,7 +367,7 @@ export function Game() {
         cancelAnimationFrame(gameLoopRef.current);
       }
     };
-  }, [hasStarted, gameState.gameOver, gameState.isPaused, keys]);
+  }, [hasStarted, gameState.gameOver, gameState.isPaused, handleEvents, drawFrame, syncHud]);
 
   // Control music during gameplay - only plays when game is active
   useEffect(() => {
@@ -308,7 +379,7 @@ export function Game() {
       audioEngine.stopMusic();
     } else if (!gameState.isPaused && !isMuted) {
       if (!audioEngine.isMusicPlaying) {
-        const aliveInvaders = gameState.invaders.filter((inv) => inv.isAlive).length;
+        const aliveInvaders = stateRef.current.invaders.filter((inv) => inv.isAlive).length;
         const speedRatio = aliveInvaders / 55;
         const tempo = Math.max(150, 500 * speedRatio);
         audioEngine.startMusic(tempo, gameState.level);
@@ -328,14 +399,12 @@ export function Game() {
   // Pause game when dialogs are open (useEffect ensures fresh state, avoids stale closures)
   useEffect(() => {
     if ((showLeaderboard || showHowToPlay) && hasStarted && !gameState.gameOver) {
-      if (!gameState.isPaused) {
-        setGameState((state) => ({ ...state, isPaused: true }));
-      }
+      pauseGame();
       // Always stop audio when dialogs are open (handles race conditions with game loop)
       audioEngine.stopMusic();
       audioEngine.stopUfoSound();
     }
-  }, [showLeaderboard, showHowToPlay, hasStarted, gameState.gameOver, gameState.isPaused]);
+  }, [showLeaderboard, showHowToPlay, hasStarted, gameState.gameOver, gameState.isPaused, pauseGame]);
 
   // Calculate canvas scale to fit viewport
   useEffect(() => {
@@ -535,7 +604,9 @@ export function Game() {
             audioEngine.stopUfoSound();
             audioEngine.playGameOver();
             setGameEndReason('timeout');
-            setGameState((state) => ({ ...state, gameOver: true, player: { ...state.player, isAlive: false } }));
+            endGame(stateRef.current, 'timeout');
+            drawFrame();
+            syncHud();
             return 0;
           }
           return prev - 1;
@@ -553,40 +624,30 @@ export function Game() {
     audioEngine.initialize();
     audioEngine.stopUfoSound(); // Stop any lingering UFO sound from previous game
 
-    // Reset game state
-    setGameState(createInitialState());
+    // Reset game state (the new state starts with the "LEVEL 1" banner showing)
+    stateRef.current = createInitialState();
+    keysRef.current.clear();
+    fireQueuedRef.current = false;
+    syncHud();
     setHasStarted(true);
     setHasPublishedScore(false);
     setHighlightedScore(null);
     setGameEndReason(null);
-    previousScoreRef.current = 0;
-    previousLevelRef.current = 1;
     previousInvaderCountRef.current = 55;
-    previousLivesRef.current = 3;
-
-    // Show level 1 popup at start
-    setDisplayedLevel(1);
-    setShowLevelPopup(true);
-    setTimeout(() => setShowLevelPopup(false), 2000);
   };
 
   const togglePause = () => {
-    setGameState((state) => {
-      if (!state.isPaused) {
-        // Pausing - stop audio
-        audioEngine.stopMusic();
-        audioEngine.stopUfoSound();
-      }
-      return { ...state, isPaused: !state.isPaused };
-    });
+    if (stateRef.current.isPaused) {
+      resumeGame();
+    } else {
+      pauseGame();
+    }
   };
 
   // Pause the game when opening a dialog (if game is running)
   const pauseForDialog = () => {
-    if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
-      setGameState((state) => ({ ...state, isPaused: true }));
-      audioEngine.stopMusic();
-      audioEngine.stopUfoSound();
+    if (hasStarted) {
+      pauseGame();
     }
   };
 
@@ -603,38 +664,24 @@ export function Game() {
 
   // Touch control handlers for mobile
   const handleTouchLeft = useCallback((pressed: boolean) => {
-    setKeys((prev) => {
-      const next = new Set(prev);
-      if (pressed) {
-        next.add('ArrowLeft');
-      } else {
-        next.delete('ArrowLeft');
-      }
-      return next;
-    });
+    if (pressed) {
+      keysRef.current.add('ArrowLeft');
+    } else {
+      keysRef.current.delete('ArrowLeft');
+    }
   }, []);
 
   const handleTouchRight = useCallback((pressed: boolean) => {
-    setKeys((prev) => {
-      const next = new Set(prev);
-      if (pressed) {
-        next.add('ArrowRight');
-      } else {
-        next.delete('ArrowRight');
-      }
-      return next;
-    });
+    if (pressed) {
+      keysRef.current.add('ArrowRight');
+    } else {
+      keysRef.current.delete('ArrowRight');
+    }
   }, []);
 
   const handleTouchFire = useCallback(() => {
     if (hasStarted && !gameState.gameOver && !gameState.isPaused) {
-      setGameState((state) => {
-        const newState = shootBullet(state);
-        if (newState !== state) {
-          audioEngine.playShoot();
-        }
-        return newState;
-      });
+      fireQueuedRef.current = true; // Fired (and its sound played) on the next tick
     }
   }, [hasStarted, gameState.gameOver, gameState.isPaused]);
 
@@ -914,7 +961,7 @@ export function Game() {
           className="relative"
           style={{ transform: `scale(${canvasScale})`, transformOrigin: 'center center' }}
         >
-          <GameCanvas gameState={gameState} playerFlashing={playerFlashing} />
+          <GameCanvas ref={canvasRef} />
 
           {/* Stats Overlay - inside canvas */}
           <div className="absolute top-0 left-0 right-0 flex items-center px-4 py-2 text-lg pointer-events-none" style={{ textShadow: '0 0 4px black, 0 0 8px black' }}>
@@ -929,7 +976,7 @@ export function Game() {
             </div>
             <div className="flex-1 flex items-center justify-center gap-2">
               <span className="text-green-400">LIVES</span>
-              <TankLives lives={gameState.player.lives} />
+              <TankLives lives={gameState.lives} />
             </div>
             <div className="flex-1 flex items-center justify-end gap-2">
               <span className="text-green-400">LEVEL</span>
@@ -967,11 +1014,11 @@ export function Game() {
           )}
 
           {/* Level Popup */}
-          {showLevelPopup && hasStarted && !gameState.gameOver && (
+          {gameState.levelBanner !== null && hasStarted && !gameState.gameOver && !gameState.isPaused && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
               <div className="text-center animate-pulse">
                 <div className="text-8xl font-bold drop-shadow-[0_0_20px_rgba(247,147,26,0.8)]" style={{ color: '#f7931a' }}>
-                  LEVEL {displayedLevel}
+                  LEVEL {gameState.levelBanner}
                 </div>
                 <div className="text-3xl text-green-400 mt-4">
                   GET READY!
@@ -986,16 +1033,7 @@ export function Game() {
               className="absolute inset-0 flex items-center justify-center bg-black/80 z-20 cursor-pointer"
               onClick={() => {
                 // Resume game on click/tap
-                if (gameState.bonusUFO && !isMuted) {
-                  audioEngine.startUfoSound();
-                }
-                if (!isMuted) {
-                  const aliveInvaders = gameState.invaders.filter((inv) => inv.isAlive).length;
-                  const speedRatio = aliveInvaders / 55;
-                  const tempo = Math.max(150, 500 * speedRatio);
-                  audioEngine.startMusic(tempo, gameState.level);
-                }
-                setGameState((state) => ({ ...state, isPaused: false }));
+                resumeGame();
               }}
             >
               <div className="text-center space-y-6">
@@ -1011,7 +1049,8 @@ export function Game() {
                     audioEngine.stopMusic();
                     audioEngine.stopUfoSound();
                     setHasStarted(false);
-                    setGameState(createInitialState());
+                    stateRef.current = createInitialState();
+                    syncHud();
                     if (freePlayTimerRef.current) {
                       clearInterval(freePlayTimerRef.current);
                       freePlayTimerRef.current = null;
