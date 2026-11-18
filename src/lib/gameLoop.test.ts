@@ -135,6 +135,7 @@ describe('tick-based timers match the old 60 Hz behaviour', () => {
 
   it('steps the formation at the march interval', () => {
     const state = createInitialState();
+    state.levelBannerTicks = 0; // Skip the wave intro hold
     const idle = { left: false, right: false, fire: false };
     const startX = state.invaders[0].x;
     for (let i = 0; i < 59; i++) tickGame(state, idle, () => 0.99);
@@ -148,6 +149,7 @@ describe('tick-based timers match the old 60 Hz behaviour', () => {
     expect(getFireCooldownTicks(1)).toBe(30);
     expect(getFireCooldownTicks(20)).toBe(9); // 150 ms floor
     const state = createInitialState();
+    state.levelBannerTicks = 0; // Skip the wave intro hold
     const fire = { left: false, right: false, fire: true };
     const shotTicks: number[] = [];
     for (let i = 0; i < 200; i++) {

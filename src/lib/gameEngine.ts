@@ -136,6 +136,18 @@ const INVADER_SPACING_X = 50;
 const INVADER_SPACING_Y = 45;
 const INVADER_START_X = 100;
 const INVADER_START_Y = 100;
+export const INVADER_STEP_DOWN = 20; // How far the formation drops at each edge
+export const MAX_WAVE_START_STEPS = 4; // Lowest a wave starts: this many steps below wave 1
+
+/**
+ * How many formation steps lower than wave 1 a wave starts: each wave starts
+ * one step lower than the one before, down to MAX_WAVE_START_STEPS, then the
+ * cycle starts again one step down (wave 1 is the only one at the very top).
+ */
+export function getWaveStartSteps(level: number): number {
+  if (level <= 1) return 0;
+  return ((level - 2) % MAX_WAVE_START_STEPS) + 1;
+}
 
 // Get fire cooldown based on level (faster shooting at higher levels)
 export function getFireCooldown(level: number): number {
@@ -247,7 +259,7 @@ function createInvaders(level: number): Invader[] {
     for (let col = 0; col < INVADERS_PER_ROW; col++) {
       invaders.push({
         x: INVADER_START_X + col * INVADER_SPACING_X,
-        y: INVADER_START_Y + row * INVADER_SPACING_Y,
+        y: INVADER_START_Y + getWaveStartSteps(level) * INVADER_STEP_DOWN + row * INVADER_SPACING_Y,
         width: INVADER_WIDTH,
         height: INVADER_HEIGHT,
         type,
@@ -289,6 +301,11 @@ function createShields(): Shield[] {
   return shields;
 }
 
+/** True while a wave's "LEVEL n / GET READY" banner shows: the formation holds and nobody fires. */
+export function isWaveIntro(state: GameState): boolean {
+  return state.levelBannerTicks > 0;
+}
+
 /** End the game once, recording why and emitting a gameOver event. */
 export function endGame(state: GameState, reason: GameEndReason, events?: GameEvent[]): void {
   if (state.gameOver) return;
@@ -313,16 +330,20 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
 
   // Advance timers
   state.tick++;
-  state.ticksSinceMarch++;
   if (state.ufoSpawnCountdown > 0) state.ufoSpawnCountdown--;
   if (state.playerFlashTicks > 0) state.playerFlashTicks--;
   if (state.levelBannerTicks > 0) state.levelBannerTicks--;
+
+  // While the "LEVEL n / GET READY" banner shows, the formation holds still
+  // and nobody fires; the player can line up
+  const waveIntro = isWaveIntro(state);
+  if (!waveIntro) state.ticksSinceMarch++;
 
   const bombSpeed = getBombSpeed(state.level);
   const player = state.player;
 
   // Fire before moving, so the shot leaves from where the player was when it was requested
-  if (input.fire && tryShoot(state)) {
+  if (input.fire && !waveIntro && tryShoot(state)) {
     events.push({ type: 'shot' });
   }
 
@@ -431,7 +452,7 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
   }
 
   // Move invaders
-  if (state.ticksSinceMarch >= state.marchIntervalTicks) {
+  if (!waveIntro && state.ticksSinceMarch >= state.marchIntervalTicks) {
     const { invaders, direction, shouldMoveDown } = moveInvaders(
       state.invaders,
       state.invaderDirection
@@ -455,7 +476,7 @@ export function tickGame(state: GameState, input: TickInput, rng: Rng = Math.ran
 
   // Random invader shooting (more frequent at higher levels)
   const shootChance = 0.015 + (state.level - 1) * 0.003;
-  if (rng() < shootChance) {
+  if (!waveIntro && rng() < shootChance) {
     const aliveInvaders = state.invaders.filter((inv) => inv.isAlive);
     if (aliveInvaders.length > 0) {
       const shooter = aliveInvaders[Math.floor(rng() * aliveInvaders.length)];
@@ -550,7 +571,7 @@ function moveInvaders(
     if (shouldMoveDown) {
       return {
         ...invader,
-        y: invader.y + 20,
+        y: invader.y + INVADER_STEP_DOWN,
       };
     } else {
       return {
