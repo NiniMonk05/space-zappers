@@ -138,25 +138,25 @@ function drawInvader(
       ];
     }
   } else if (invader.type === 'crab') {
-    // Middle rows invader: a one-eyed diamond flyer that flaps its fins
+    // Middle rows invader: a one-eyed orb on two stubby feet
     if (frame === 0) {
       pixels = [
-        '██    ██    ██',
-        '██  ██████  ██',
+        '    ██████    ',
+        '  ██████████  ',
         '██████  ██████',
+        '██████████████',
         '  ██████████  ',
         '    ██████    ',
-        '      ██      ',
-        '      ██      ',
+        '  ██      ██  ',
       ];
     } else {
       pixels = [
-        '      ██      ',
         '    ██████    ',
-        '  ████  ████  ',
+        '  ██████████  ',
+        '██████  ██████',
         '██████████████',
-        '██  ██████  ██',
-        '██    ██    ██',
+        '  ██████████  ',
+        '    ██████    ',
         '    ██  ██    ',
       ];
     }
