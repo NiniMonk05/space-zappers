@@ -815,7 +815,7 @@ export function Game() {
 
         <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
           {user ? (
-            <DropdownMenu>
+            <DropdownMenu onOpenChange={(open) => { if (open) pauseForDialog(); }}>
               <DropdownMenuTrigger asChild>
                 <button className="focus:outline-none">
                   <Avatar className={`border-2 border-green-500 cursor-pointer hover:border-green-400 transition-colors ${isMobile ? 'h-6 w-6' : 'h-9 w-9'}`}>

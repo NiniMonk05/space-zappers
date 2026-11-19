@@ -42,8 +42,19 @@ describe('keyBelongsElsewhere', () => {
   });
 
   it('is true while a dialog or menu is open, wherever the focus is', () => {
-    expect(keyBelongsElsewhere(press('Enter', '<div role="dialog"><button id="t">Close</button></div>'))).toBe(true);
-    expect(keyBelongsElsewhere(press('Tab', '<div id="t"></div><div role="dialog"></div>'))).toBe(true);
-    expect(keyBelongsElsewhere(press('ArrowDown', '<div id="t"></div><div role="menu"></div>'))).toBe(true);
+    expect(keyBelongsElsewhere(press('Enter', '<div role="dialog" data-state="open"><button id="t">Close</button></div>'))).toBe(true);
+    expect(keyBelongsElsewhere(press('Tab', '<div id="t"></div><div role="alertdialog" data-state="open"></div>'))).toBe(true);
+    expect(keyBelongsElsewhere(press('ArrowDown', '<div id="t"></div><div role="menu" data-state="open"></div>'))).toBe(true);
+    expect(keyBelongsElsewhere(press('ArrowDown', '<div id="t"></div><div role="listbox" data-state="open"></div>'))).toBe(true);
+  });
+
+  it('is false again once the overlay is closing, and for a stray element with such a role', () => {
+    expect(keyBelongsElsewhere(press('ArrowLeft', '<div id="t"></div><div role="dialog" data-state="closed"></div>'))).toBe(false);
+    expect(keyBelongsElsewhere(press('ArrowLeft', '<div id="t"></div><div role="dialog"></div>'))).toBe(false);
+  });
+
+  it('counts a select and editable text as typing', () => {
+    expect(keyBelongsElsewhere(press('a', '<select id="t"></select>'))).toBe(true);
+    expect(keyBelongsElsewhere(press('a', '<div contenteditable="true"><span id="t">x</span></div>'))).toBe(true);
   });
 });

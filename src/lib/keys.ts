@@ -2,8 +2,13 @@
 
 const CONTROLS = 'button, a, input, textarea, select, summary, [role="button"], [role="menuitem"], [role="option"], [contenteditable="true"]';
 const TYPING = 'input, textarea, select, [contenteditable="true"]';
-/** Radix renders dialogs, dropdown menus and select lists with these roles while they are open. */
-const OVERLAYS = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+/**
+ * Radix renders dialogs, dropdown menus and select lists with these roles, marked
+ * data-state="open" while open. Asking for the mark means an overlay that is fading out
+ * (data-state="closed") no longer holds the keys, and a stray element with one of these roles
+ * (a browser extension's, say) cannot switch the game's keys off.
+ */
+const OVERLAYS = ['dialog', 'alertdialog', 'menu', 'listbox'].map((role) => `[role="${role}"][data-state="open"]`).join(', ');
 
 const targetOf = (e: KeyboardEvent) => (e.target instanceof Element ? e.target : null);
 
