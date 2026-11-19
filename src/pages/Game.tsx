@@ -41,20 +41,9 @@ import { useInvoicePayment } from '@/hooks/useInvoicePayment';
 import QRCode from 'qrcode';
 import { TankLives } from '@/components/TankLives';
 import { WalletModal } from '@/components/WalletModal';
+import { isFireKey, keyBelongsElsewhere } from '@/lib/keys';
 
 const GAME_COST_SATS = 21;
-/**
- * Fire / start: the Space bar, or Enter. Enter is what a TV remote's OK button sends, so the
- * game is playable from a sofa. Enter keeps its normal job while a button, link or text field
- * has focus (pressing a focused button, submitting a form), so it only fires from the game.
- */
-function isFireKey(e: KeyboardEvent): boolean {
-  if (e.key === ' ') return true;
-  if (e.key !== 'Enter') return false;
-  const target = e.target instanceof Element ? e.target : null;
-  return !target?.closest('button, a, input, textarea, select, summary, [role="button"], [role="menuitem"], [role="option"], [contenteditable="true"]');
-}
-
 const RECIPIENT_LIGHTNING_ADDRESS = 'space.zappers@bank.weeksfamily.me';
 
 export function Game() {
@@ -170,6 +159,10 @@ export function Game() {
         startGame();
         return;
       }
+
+      // While a dialog or menu is open, or the player is typing, keys are theirs: the game
+      // neither moves, fires nor unpauses, and nothing is swallowed (Tab, Enter on Close, a/d/space in a field).
+      if (keyBelongsElsewhere(e)) return;
 
       // Any key unpauses the game
       if (hasStarted && gameState.isPaused && !gameState.gameOver) {
@@ -822,7 +815,7 @@ export function Game() {
 
         <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
           {user ? (
-            <DropdownMenu>
+            <DropdownMenu onOpenChange={(open) => { if (open) pauseForDialog(); }}>
               <DropdownMenuTrigger asChild>
                 <button className="focus:outline-none">
                   <Avatar className={`border-2 border-green-500 cursor-pointer hover:border-green-400 transition-colors ${isMobile ? 'h-6 w-6' : 'h-9 w-9'}`}>
