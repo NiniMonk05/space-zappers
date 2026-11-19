@@ -18,7 +18,7 @@ Pay 21 sats to play. Publish your high scores to the decentralized leaderboard.
 
 1. **Pay to Play** - Click "Pay 21 Sats" and scan the QR code with your Lightning wallet
 2. **Move** - Arrow keys (← →) or A/D
-3. **Shoot** - Spacebar
+3. **Shoot** - Spacebar or Enter (Enter is the OK button on a TV remote)
 4. **Survive** - Destroy all invaders before they reach you
 5. **Compete** - Login with Nostr to publish your score to the global leaderboard
 

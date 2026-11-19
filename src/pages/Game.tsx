@@ -43,6 +43,18 @@ import { TankLives } from '@/components/TankLives';
 import { WalletModal } from '@/components/WalletModal';
 
 const GAME_COST_SATS = 21;
+/**
+ * Fire / start: the Space bar, or Enter. Enter is what a TV remote's OK button sends, so the
+ * game is playable from a sofa. Enter keeps its normal job while a button, link or text field
+ * has focus (pressing a focused button, submitting a form), so it only fires from the game.
+ */
+function isFireKey(e: KeyboardEvent): boolean {
+  if (e.key === ' ') return true;
+  if (e.key !== 'Enter') return false;
+  const target = e.target instanceof Element ? e.target : null;
+  return !target?.closest('button, a, input, textarea, select, summary, [role="button"], [role="menuitem"], [role="option"], [contenteditable="true"]');
+}
+
 const RECIPIENT_LIGHTNING_ADDRESS = 'space.zappers@bank.weeksfamily.me';
 
 export function Game() {
@@ -151,8 +163,8 @@ export function Game() {
   // Handle keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Space starts game from payment confirmation screen
-      if (e.key === ' ' && showPayment && hasPaid) {
+      // Space (or Enter) starts game from payment confirmation screen
+      if (isFireKey(e) && showPayment && hasPaid) {
         e.preventDefault();
         setShowPayment(false);
         startGame();
@@ -179,7 +191,7 @@ export function Game() {
         return;
       }
 
-      if (['ArrowLeft', 'ArrowRight', 'a', 'd', ' ', 'Escape'].includes(e.key)) {
+      if (['ArrowLeft', 'ArrowRight', 'a', 'd', ' ', 'Escape'].includes(e.key) || isFireKey(e)) {
         e.preventDefault();
         setKeys((prev) => new Set(prev).add(e.key));
 
@@ -190,7 +202,7 @@ export function Game() {
           audioEngine.stopUfoSound();
         }
 
-        if (e.key === ' ' && hasStarted && !gameState.gameOver && !gameState.isPaused) {
+        if (isFireKey(e) && hasStarted && !gameState.gameOver && !gameState.isPaused) {
           setGameState((state) => {
             const newState = shootBullet(state);
             if (newState !== state) {
@@ -1104,7 +1116,7 @@ export function Game() {
       {!isMobile && (
         <div className="relative z-10 bg-black border-t-2 border-green-500 text-center text-green-600 px-6 py-2 text-lg">
           {hasStarted ? (
-            <span>← → or A/D: MOVE | SPACE: SHOOT | ESC: PAUSE</span>
+            <span>← → or A/D: MOVE | SPACE or ENTER: SHOOT | ESC: PAUSE</span>
           ) : (
             <span>VIBED BY NINIMONK05 • POWERED BY LIGHTNING ⚡</span>
           )}
@@ -1204,7 +1216,7 @@ export function Game() {
             </div>
             <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">🚀</span>
-              <span>PRESS SPACE TO SHOOT</span>
+              <span>PRESS SPACE OR ENTER TO SHOOT</span>
             </div>
             <div className={`flex items-start ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <span className="text-yellow-400">⏸️</span>
@@ -1253,7 +1265,7 @@ export function Game() {
                   className={`w-full bg-green-500 text-black hover:bg-green-400 font-bold ${isMobile ? 'text-lg py-4' : 'text-2xl py-8'}`}
                 >
                   <Play className={isMobile ? 'mr-2 h-5 w-5' : 'mr-2 h-8 w-8'} />
-                  PLAY NOW {!isMobile && '(SPACE)'}
+                  PLAY NOW {!isMobile && '(SPACE / ENTER)'}
                 </Button>
               </>
             ) : !lightningInvoice ? (
