@@ -52,7 +52,7 @@ function isFireKey(e: KeyboardEvent): boolean {
   if (e.key === ' ') return true;
   if (e.key !== 'Enter') return false;
   const target = e.target instanceof Element ? e.target : null;
-  return !target?.closest('button, a, input, textarea, select, [role="button"], [contenteditable="true"]');
+  return !target?.closest('button, a, input, textarea, select, summary, [role="button"], [role="menuitem"], [role="option"], [contenteditable="true"]');
 }
 
 const RECIPIENT_LIGHTNING_ADDRESS = 'space.zappers@bank.weeksfamily.me';
